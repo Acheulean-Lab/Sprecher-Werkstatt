@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&display=swap');
+
+/* ── Univers (local) ────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Univers';
+  src: url('./univers/UniversLight.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Univers';
+  src: url('./univers/UniversRegular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Univers';
+  src: url('./univers/UniversBold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Univers Condensed';
+  src: url('./univers/UniversCnRg.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Univers Condensed';
+  src: url('./univers/UniversCnBold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-page-bg: #000000;
+  --color-surface: #000000;
+  --color-border: #3F3F46;
+  --color-text-primary: #FFFFFF;
+  --color-text-muted: #9CA3A0;
+  --color-accent: #2563EB;
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+}
+body {
+  background-color: var(--color-page-bg);
+  color: var(--color-text-primary);
+  font-family: 'Univers', 'Helvetica Neue', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+* { box-sizing: border-box; }
+
+@layer components {
+  /* No frosted glass — terminal-inspired: solid black with a soft outline. */
+  .glass {
+    background-color: #000000;
+  }
+}
+
+/* Form controls inherit color-scheme: dark so native checkboxes/selects match */
+input[type="checkbox"], input[type="radio"] {
+  accent-color: #2563EB;
+}
