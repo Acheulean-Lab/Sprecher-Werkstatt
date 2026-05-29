@@ -23,16 +23,6 @@ export const DEFAULT_GEOMETRY: SpeakerGeometry = {
   enclosure: 'sealed',
 };
 
-export interface Variant {
-  id: string;
-  name: string;
-  tag: VariantTag;
-  notes?: string;
-  color: string;
-  geometry?: SpeakerGeometry;
-  measurements: Measurement[];
-}
-
 export interface SweepParams {
   f1: number;
   f2: number;
@@ -74,13 +64,20 @@ export interface Measurement {
   gateMs: number;
 }
 
+// Session is the top-level unit. Each session represents one speaker configuration
+// being measured. Variant fields (tag, notes, geometry, color, measurements) are
+// stored directly on the session — there is no separate Variant wrapper.
 export interface Session {
   id: string;
   name: string;
   createdAt: number;
   updatedAt: number;
   micProfileId: string | null;
-  variants: Variant[];
+  color: string;
+  tag: VariantTag;
+  notes?: string;
+  geometry: SpeakerGeometry;
+  measurements: Measurement[];
 }
 
 export interface MicProfile {

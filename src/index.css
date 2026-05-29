@@ -67,6 +67,41 @@ body {
   .glass {
     background-color: #000000;
   }
+
+  /* Shared typographic utilities ─────────────────────────────────────────── */
+
+  /* IBM Plex Mono labels: buttons, stepper, numeric readouts */
+  .text-mono-label {
+    @apply font-mono text-base uppercase tracking-[0.04em];
+  }
+
+  /* Univers Light body copy — section descriptions, hints */
+  .text-body {
+    @apply font-sans font-light text-base capitalize tracking-[0.04em] text-white;
+  }
+
+  /* Univers Bold section headings */
+  .text-section-heading {
+    @apply font-sans font-bold text-base capitalize tracking-[0.04em] text-white;
+  }
+
+  /* Outlined terminal button (h-12, Mono, uppercase) — used on Calibrate step */
+  .terminal-btn {
+    @apply h-12 px-3 border border-white bg-transparent font-mono text-base uppercase tracking-[0.04em] text-white
+           hover:border-accent hover:text-accent transition-colors
+           disabled:opacity-40 disabled:cursor-not-allowed
+           focus:outline-none focus:ring-2 focus:ring-accent/30;
+  }
+
+  /* Univers Light 28px page title — used in the wizard header */
+  .text-page-title {
+    @apply text-[28px] font-normal capitalize tracking-[0.04em] text-white;
+  }
+
+  /* 1 px white hairline divider between content sections */
+  .section-divider {
+    @apply border-b border-white;
+  }
 }
 
 /* Form controls inherit color-scheme: dark so native checkboxes/selects match */

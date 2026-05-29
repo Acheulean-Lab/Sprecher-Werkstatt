@@ -1,14 +1,15 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { Button } from '../ui/Button';
 import { Input, Label, Select, Textarea } from '../ui/Input';
 import { InfoDot } from '../ui/Tooltip';
+import { Stepper } from '../ui/Stepper';
+import { TerminalButton } from '../ui/TerminalButton';
 import { LevelMeter } from '../ui/LevelMeter';
-import { Badge } from '../ui/Badge';
 import { BUILT_IN_PROFILES, parseCalFile } from '../../data/micProfiles';
 import { POSITION_PRESETS, DEFAULT_GEOMETRY } from '../../types';
-import type { Measurement, Variant, MicProfile, SpeakerGeometry, DriverPosition, EnclosureType } from '../../types';
+import type { Measurement, MicProfile, SpeakerGeometry, DriverPosition, EnclosureType, VariantTag } from '../../types';
 import { SpeakerCube } from '../ui/SpeakerCube';
 import { generateLogSweep } from '../../engine/sweepGenerator';
 import { capture, listAudioDevices, playTestTone, refreshDeviceLabels } from '../../engine/recorder';
@@ -34,15 +35,12 @@ const STEP_TITLES: Record<Step, string> = {
   analysis: 'Analyze the results',
 };
 
-export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: string; initialVariantId?: string }) {
+export function MeasurementWizard({ sessionId }: { sessionId: string }) {
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === sessionId));
-  const addVariant = useSessionStore((s) => s.addVariant);
-  const updateVariant = useSessionStore((s) => s.updateVariant);
+  const updateSession = useSessionStore((s) => s.updateSession);
   const addMeasurement = useSessionStore((s) => s.addMeasurement);
   const addCustomProfile = useSessionStore((s) => s.addCustomProfile);
   const getProfile = useSessionStore((s) => s.getProfile);
-  const setSessionMicProfile = useSessionStore((s) => s.setSessionMicProfile);
-  const renameSession = useSessionStore((s) => s.renameSession);
   const customProfiles = useSessionStore((s) => s.customProfiles);
   const settings = useSettingsStore();
 
@@ -50,16 +48,9 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
 
   // ── Setup state ─────────────────────────────────────────────────────────
   const [sessionName, setSessionName] = useState(session?.name || '');
-  const [variantId, setVariantId] = useState<string | undefined>(initialVariantId);
-  const [variantName, setVariantName] = useState('');
-  const [variantTag, setVariantTag] = useState<Variant['tag']>('other');
-  const [variantNotes, setVariantNotes] = useState('');
-  const [geometry, setGeometry] = useState<SpeakerGeometry>(() => {
-    const existing = initialVariantId
-      ? session?.variants.find((v) => v.id === initialVariantId)?.geometry
-      : undefined;
-    return existing ?? { ...DEFAULT_GEOMETRY };
-  });
+  const [sessionTag, setSessionTag] = useState<VariantTag>(session?.tag || 'other');
+  const [sessionNotes, setSessionNotes] = useState(session?.notes || '');
+  const [geometry, setGeometry] = useState<SpeakerGeometry>(() => session?.geometry ?? { ...DEFAULT_GEOMETRY });
   const [micProfileId, setMicProfileId] = useState<string | null>(session?.micProfileId || 'flat');
   const [inputDeviceId, setInputDeviceId] = useState<string | null>(settings.inputDeviceId);
   const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
@@ -91,9 +82,9 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
   useEffect(() => {
     scrollerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
   }, [step]);
+
   const allProfiles: MicProfile[] = [...BUILT_IN_PROFILES, ...customProfiles];
-  const variant = variantId ? session?.variants.find((v) => v.id === variantId) : null;
-  const measurementsInVariant = variant?.measurements ?? [];
+  const measurements = session?.measurements ?? [];
 
   // ── Effects ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -106,8 +97,7 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
   useEffect(() => () => { stopToneRef.current?.(); }, []);
 
   // Auto-stop the calibration test tone the moment the user leaves the
-  // Calibrate step. Without this, an unfortunately-routed page transition
-  // could leave the tone playing in the background.
+  // Calibrate step.
   useEffect(() => {
     if (step !== 'calibrate' && tonePlaying) {
       stopToneRef.current?.();
@@ -138,15 +128,14 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
   // ── Step navigation ─────────────────────────────────────────────────────
   const stepIdx = STEPS.indexOf(step);
   const canAdvance = (from: Step): boolean => {
-    if (from === 'setup') return !!(variantId || variantName.trim());
-    if (from === 'calibrate') return outputLevelOk; // noise check is optional but recommended
-    if (from === 'capture') return measurementsInVariant.length > 0;
+    if (from === 'calibrate') return outputLevelOk;
+    if (from === 'capture') return measurements.length > 0;
     return true;
   };
   const goNext = () => {
     if (step === 'setup') return commitSetupAndAdvance();
     if (step === 'calibrate' && !outputLevelOk) return;
-    if (step === 'capture' && measurementsInVariant.length === 0) return;
+    if (step === 'capture' && measurements.length === 0) return;
     const next = STEPS[Math.min(STEPS.length - 1, stepIdx + 1)];
     setStep(next);
   };
@@ -156,16 +145,13 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
   };
 
   const commitSetupAndAdvance = () => {
-    if (sessionName.trim() && sessionName !== session.name) renameSession(session.id, sessionName.trim());
-    let vid = variantId;
-    if (!vid) {
-      if (!variantName.trim()) { alert('Please enter a name for what you’re testing (the variant).'); return; }
-      vid = addVariant(sessionId, variantName.trim(), variantTag, variantNotes || undefined);
-      setVariantId(vid);
-    }
-    // Always persist the geometry — for a new variant or updates to an existing one.
-    if (vid) updateVariant(sessionId, vid, { geometry });
-    setSessionMicProfile(sessionId, micProfileId);
+    updateSession(sessionId, {
+      name: sessionName.trim() || session.name,
+      tag: sessionTag,
+      notes: sessionNotes.trim() || undefined,
+      geometry,
+      micProfileId,
+    });
     settings.setInputDevice(inputDeviceId);
     setStep('calibrate');
   };
@@ -194,8 +180,6 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
       const { spectrum, exceedsLowBand } = analyzeNoiseFloor(recording, sampleRate);
       setNoiseFloor(spectrum);
       setNoiseWarning(exceedsLowBand ? 'Low-frequency noise floor is above −50 dBFS. This will corrupt low-frequency measurements. Consider waiting for a quieter moment.' : null);
-      // First successful mic open populates device labels — refresh so the
-      // input picker can show real names instead of "default".
       refreshDeviceLabels().then((d) => setInputDevices(d.inputs));
     } catch {
       alert('Could not access microphone. Grant permission in your browser/OS settings and try again.');
@@ -265,8 +249,6 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
       setMeasurementNotes('');
       setProcessing(false);
       setCaptureSub('review');
-      // Populate device labels post-capture in case the user wants to switch
-      // mics for a follow-up measurement.
       refreshDeviceLabels().then((d) => setInputDevices(d.inputs));
     } catch (err) {
       setSweeping(false);
@@ -278,13 +260,11 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
 
   // Persisting a measurement can throw if localStorage is full. We want the
   // navigation flow to continue regardless — the in-memory store update will
-  // still succeed (Zustand applies state before attempting persistence) and a
-  // failed persist is recoverable by the user (export the session, free space,
-  // etc.).
+  // still succeed (Zustand applies state before attempting persistence).
   const persistMeasurement = (): boolean => {
-    if (!result || !variantId) return false;
+    if (!result) return false;
     try {
-      addMeasurement(sessionId, variantId, { ...result, name: measurementName || result.name, notes: measurementNotes });
+      addMeasurement(sessionId, { ...result, name: measurementName || result.name, notes: measurementNotes });
       return true;
     } catch (err) {
       console.warn('[soundbench] measurement save failed:', err);
@@ -313,19 +293,17 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
 
   const reviewSeries = useMemo(() => {
     if (!result) return [];
-    return [{ name: result.name, color: variant?.color || '#60A5FA', data: result.smoothedResponse || result.frequencyResponse }];
-  }, [result, variant]);
+    return [{ name: result.name, color: session.color, data: result.smoothedResponse || result.frequencyResponse }];
+  }, [result, session.color]);
 
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div ref={scrollerRef} className="flex-1 overflow-y-auto">
-      {/* Sticky header zone — stepper sits centered. The home logo lives
-          at the App level (fixed top-left), so it doesn't compete with the
-          wizard chrome. Back-to-Capture floats to the right on analysis. */}
+      {/* Sticky header zone — stepper sits centered. */}
       <div className="sticky top-0 z-20 bg-black">
         <div className={`${step === 'analysis' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-8 pt-8 pb-4 relative flex justify-center items-center`}>
-          <Stepper step={step} />
+          <Stepper labels={STEPS.map((s) => STEP_LABELS[s])} activeIndex={STEPS.indexOf(step)} />
           {step === 'analysis' && (
             <div className="absolute right-8">
               <Button variant="secondary" size="sm" onClick={() => setStep('capture')}>← Back to Capture</Button>
@@ -336,7 +314,7 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
 
       <div className={step === 'analysis' ? 'w-full' : 'max-w-3xl mx-auto px-8 pt-8 pb-10'}>
         {step !== 'analysis' && (
-          <h1 className="text-[28px] font-normal capitalize tracking-[0.04em] text-white mb-[60px] ">
+          <h1 className="text-page-title mb-[60px]">
             {STEP_TITLES[step]}
           </h1>
         )}
@@ -344,59 +322,37 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
         {/* ─── Setup ──────────────────────────────────────────────────── */}
         {step === 'setup' && (
           <div className="space-y-6">
-            <div className="">
-              {/* <h3 className="text-sm font-semibold text-ink mb-3">Project</h3> */}
-              {/* <Label htmlFor="session-name">Session name</Label> */}
-              <Input id="session-name" value={sessionName} onChange={(e) => setSessionName(e.target.value)} placeholder="e.g. Dayton RS150 — 0.5 L ported" />
-              {/* <p className="text-xs text-white font-light mt-1">One session per speaker under test. You can rename or switch sessions from the sidebar.</p> */}
+            <div>
+              <Input
+                id="session-name"
+                value={sessionName}
+                onChange={(e) => setSessionName(e.target.value)}
+                placeholder="e.g. Dayton RS150 — 0.5 L ported"
+              />
             </div>
 
             <Card>
-              <h3 className="text-sm font-semibold text-ink mb-3">What are you testing?</h3>
-              {variant ? (
-                <div className="flex items-center gap-3 text-sm">
-                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: variant.color }} />
-                  <span className="font-medium">{variant.name}</span>
-                  <Badge>{variant.tag}</Badge>
-                  <Button size="sm" variant="ghost" onClick={() => { setVariantId(undefined); setVariantName(''); }}>Change</Button>
+              <h3 className="text-sm font-semibold text-ink mb-3">Project details</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Type tag</Label>
+                  <Select value={sessionTag} onChange={(e) => setSessionTag(e.target.value as VariantTag)}>
+                    <option value="port length">Port length</option>
+                    <option value="enclosure type">Enclosure type</option>
+                    <option value="driver swap">Driver swap</option>
+                    <option value="EQ/DSP">EQ / DSP</option>
+                    <option value="other">Other</option>
+                  </Select>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label>Variant name</Label>
-                      <Input placeholder="e.g. Port 60 mm" value={variantName} onChange={(e) => setVariantName(e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>Type tag</Label>
-                      <Select value={variantTag} onChange={(e) => setVariantTag(e.target.value as Variant['tag'])}>
-                        <option value="port length">port length</option>
-                        <option value="enclosure type">enclosure type</option>
-                        <option value="driver swap">driver swap</option>
-                        <option value="EQ/DSP">EQ/DSP</option>
-                        <option value="other">other</option>
-                      </Select>
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Notes (optional)</Label>
-                    <Textarea value={variantNotes} onChange={(e) => setVariantNotes(e.target.value)} placeholder="Any details about this configuration" />
-                  </div>
-                </div>
-              )}
-              {session.variants.length > 0 && !variant && (
-                <div className="mt-4 pt-4 border-t border-border">
-                  <Label>…or pick an existing variant</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {session.variants.map((v) => (
-                      <button key={v.id} onClick={() => setVariantId(v.id)} className="rounded-btn border border-border bg-surface px-3 py-1.5 text-xs text-ink hover:border-white">
-                        <span className="inline-block w-2 h-2 rounded-full mr-2 align-middle" style={{ backgroundColor: v.color }} />
-                        {v.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+              </div>
+              <div className="mt-3">
+                <Label>Notes (optional)</Label>
+                <Textarea
+                  value={sessionNotes}
+                  onChange={(e) => setSessionNotes(e.target.value)}
+                  placeholder="Any details about this configuration"
+                />
+              </div>
             </Card>
 
             <Card>
@@ -511,15 +467,15 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
           <div>
             {/* ── Background noise level ─────────────────────────────── */}
             <section className="space-y-[12px] pb-[36px]">
-              <h2 className="font-sans font-bold text-base capitalize tracking-[0.04em] text-white">
+              <h2 className="text-section-heading">
                 Background noise level
               </h2>
-              <p className="font-sans font-light text-base capitalize tracking-[0.04em] text-white pb-2">
+              <p className="text-body pb-2">
                 Record three seconds of silence so we can show your room's noise floor. Stay quiet and turn off HVAC/fans if possible. Low-frequency noise (below 500 Hz) most often corrupts speaker measurements.
               </p>
-              <CalibrateButton onClick={runNoiseCheck} disabled={sweeping}>
+              <TerminalButton onClick={runNoiseCheck} disabled={sweeping}>
                 {noiseFloor ? 'Re-run level check' : 'Start level check'}
-              </CalibrateButton>
+              </TerminalButton>
               {sweeping && <LevelMeter dbfs={liveLevel} />}
               {noiseFloor && (
                 <FrequencyChart series={[{ name: 'Noise floor', color: '#F02640', data: noiseFloor }]} height={200} yMin={-120} yMax={0} />
@@ -530,23 +486,22 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
             </section>
 
             {/* ── Output level safety check ─────────────────────────── */}
-            <section className="space-y-[12px] pt-[36px] pb-[36px] ">
-              {/* border-b border-white */}
-              <h2 className="font-sans font-bold text-base capitalize tracking-[0.04em] text-white">
+            <section className="space-y-[12px] pt-[36px] pb-[36px]">
+              <h2 className="text-section-heading">
                 Output level safety check
               </h2>
-              <p className="font-sans font-light text-base capitalize tracking-[0.04em] text-white pb-2">
+              <p className="text-body pb-2">
                 Before any sweep, set a safe playback level. Start with your amplifier or system volume at the minimum, then slowly raise it. Never start at full volume — you could damage your speakers or hearing. Press Play test tone to send a soft 1 kHz reference tone while you set the dial.
               </p>
               <div className="flex items-center gap-[25px] flex-wrap">
-                <CalibrateButton onClick={toggleTestTone}>
+                <TerminalButton onClick={toggleTestTone}>
                   {tonePlaying ? 'Stop test tone' : 'Start test tone'}
-                </CalibrateButton>
-                <span className="font-mono text-base uppercase tracking-[0.04em] text-white">
+                </TerminalButton>
+                <span className="text-mono-label text-white">
                   {tonePlaying ? 'tone playing' : '1 kHz · −40 dBFS'}
                 </span>
               </div>
-              <label className="flex items-start gap-3 font-sans font-light text-base capitalize tracking-[0.04em] text-white">
+              <label className="flex items-start gap-3 text-body">
                 <input
                   type="checkbox"
                   checked={outputLevelOk}
@@ -568,13 +523,13 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
         {/* ─── Capture ────────────────────────────────────────────────── */}
         {step === 'capture' && (
           <div className="space-y-6">
-            {/* Variant header */}
+            {/* Session header */}
             <div className="flex items-center justify-between p-4 border border-border rounded-card">
               <div className="flex items-center gap-3 text-sm">
-                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: variant?.color }} />
-                <span className="font-medium text-ink">{variant?.name}</span>
-                <Badge>{variant?.tag}</Badge>
-                <span className="text-white font-light">· {measurementsInVariant.length} measurement{measurementsInVariant.length === 1 ? '' : 's'}</span>
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: session.color }} />
+                <span className="font-medium text-ink">{session.name}</span>
+                <span className="text-xs uppercase tracking-wide border border-border px-1.5 py-0.5 text-white font-light">{session.tag}</span>
+                <span className="text-white font-light">· {measurements.length} measurement{measurements.length === 1 ? '' : 's'}</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-white font-light">
                 <span className="text-success">●</span> Output level set
@@ -587,7 +542,7 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
                 <p className="text-sm text-white font-light">Pick the mic position for the next sweep. Each preset includes a placement guide.</p>
                 <div className="grid grid-cols-2 gap-3">
                   {POSITION_PRESETS.map((p) => {
-                    const taken = measurementsInVariant.some((m) => m.position === p.label);
+                    const taken = measurements.some((m) => m.position === p.label);
                     return (
                       <button
                         key={p.id}
@@ -596,7 +551,7 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
                       >
                         <div className="flex items-center gap-3">
                           <SpeakerCube
-                            geometry={variant?.geometry ?? DEFAULT_GEOMETRY}
+                            geometry={session.geometry}
                             size={72}
                             micPlacement={p.mic}
                             strokeWidth={1}
@@ -623,7 +578,7 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
                 </Card>
                 <div className="flex justify-between">
                   <Button variant="secondary" onClick={goPrev}>← Back to Calibrate</Button>
-                  <Button onClick={() => setStep('analysis')} disabled={measurementsInVariant.length === 0}>
+                  <Button onClick={() => setStep('analysis')} disabled={measurements.length === 0}>
                     Finish & view Analysis →
                   </Button>
                 </div>
@@ -736,94 +691,6 @@ export function MeasurementWizard({ sessionId, initialVariantId }: { sessionId: 
   );
 }
 
-function Stepper({ step }: { step: Step }) {
-  const idx = STEPS.indexOf(step);
-  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const [bar, setBar] = useState<{ left: number; width: number; top: number } | null>(null);
-  // Skip the transition on the very first measurement so the underline doesn't
-  // visibly slide in from zero on initial mount — only animate on step changes.
-  const [hasMounted, setHasMounted] = useState(false);
-
-  // Measure the active item's box so the underline can sit exactly under it.
-  // useLayoutEffect avoids the one-frame flash you'd get with useEffect.
-  useLayoutEffect(() => {
-    const el = itemRefs.current[idx];
-    if (!el) return;
-    setBar({ left: el.offsetLeft, width: el.offsetWidth, top: el.offsetTop + el.offsetHeight });
-  }, [idx]);
-
-  useEffect(() => {
-    setHasMounted(true);
-  }, []);
-
-  // Re-measure on viewport resize — label widths shift with font hinting.
-  useEffect(() => {
-    const onResize = () => {
-      const el = itemRefs.current[idx];
-      if (el) setBar({ left: el.offsetLeft, width: el.offsetWidth, top: el.offsetTop + el.offsetHeight });
-    };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [idx]);
-
-  // Same ease curve for both the underline slide and the text-colour fade so
-  // they read as a single transition.
-  const ease = 'cubic-bezier(0.65, 0, 0.35, 1)';
-  const slideMs = 360;
-  const fadeMs = 220;
-
-  return (
-    <div className="relative flex items-start gap-[18px] py-1">
-      {STEPS.map((s, i) => {
-        const active = i === idx;
-        return (
-          <div
-            key={s}
-            ref={(el) => { itemRefs.current[i] = el; }}
-            className="flex items-start h-7 px-2"
-          >
-            <span
-              className={`font-mono text-base uppercase tracking-[0.04em] ${active ? 'text-white' : 'text-[#939393]'}`}
-              style={{ transition: `color ${fadeMs}ms ${ease}` }}
-            >
-              {STEP_LABELS[s]}
-            </span>
-          </div>
-        );
-      })}
-      {bar && (
-        <div
-          aria-hidden
-          className="absolute h-px bg-white pointer-events-none"
-          style={{
-            left: bar.left,
-            width: bar.width,
-            top: bar.top,
-            transition: hasMounted ? `left ${slideMs}ms ${ease}, width ${slideMs}ms ${ease}` : 'none',
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-/** 48-px outlined button used on the Calibrate page — IBM Plex Mono, uppercase,
- *  matching the Figma frame for that step. */
-function CalibrateButton({ children, onClick, disabled }: {
-  children: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="h-12 px-3 border border-white bg-transparent font-mono text-base uppercase tracking-[0.04em] text-white hover:border-accent hover:text-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-accent/30"
-    >
-      {children}
-    </button>
-  );
-}
 
 function Card({ children }: { children: React.ReactNode }) {
   return <div className="border border-border rounded-card p-5">{children}</div>;
@@ -837,4 +704,3 @@ function Metric({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-

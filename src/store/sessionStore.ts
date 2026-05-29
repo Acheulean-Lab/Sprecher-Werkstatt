@@ -1,29 +1,21 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Session, Variant, Measurement, MicProfile } from '../types';
-import { CURVE_COLORS } from '../types';
+import type { Session, Measurement, MicProfile } from '../types';
+import { CURVE_COLORS, DEFAULT_GEOMETRY } from '../types';
 import { BUILT_IN_PROFILES } from '../data/micProfiles';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 interface SessionState {
   sessions: Session[];
-  activeSessionId: string | null;
   customProfiles: MicProfile[];
 
   createSession: (name: string) => string;
-  deleteSession: (id: string) => void;
-  renameSession: (id: string, name: string) => void;
-  setActiveSession: (id: string | null) => void;
-  setSessionMicProfile: (sessionId: string, micProfileId: string | null) => void;
+  updateSession: (id: string, patch: Partial<Pick<Session, 'name' | 'tag' | 'notes' | 'geometry' | 'color' | 'micProfileId'>>) => void;
 
-  addVariant: (sessionId: string, name: string, tag: Variant['tag'], notes?: string) => string;
-  updateVariant: (sessionId: string, variantId: string, patch: Partial<Variant>) => void;
-  deleteVariant: (sessionId: string, variantId: string) => void;
-
-  addMeasurement: (sessionId: string, variantId: string, m: Measurement) => void;
-  deleteMeasurement: (sessionId: string, variantId: string, measurementId: string) => void;
-  updateMeasurement: (sessionId: string, variantId: string, measurementId: string, patch: Partial<Measurement>) => void;
+  addMeasurement: (sessionId: string, m: Measurement) => void;
+  deleteMeasurement: (sessionId: string, measurementId: string) => void;
+  updateMeasurement: (sessionId: string, measurementId: string, patch: Partial<Measurement>) => void;
 
   addCustomProfile: (p: MicProfile) => void;
   deleteCustomProfile: (id: string) => void;
@@ -36,72 +28,57 @@ export const useSessionStore = create<SessionState>()(
   persist(
     (set, get) => ({
       sessions: [],
-      activeSessionId: null,
       customProfiles: [],
 
       createSession: (name) => {
         const id = uid();
         const now = Date.now();
-        const s: Session = { id, name, createdAt: now, updatedAt: now, micProfileId: 'flat', variants: [] };
-        set((st) => ({ sessions: [s, ...st.sessions], activeSessionId: id }));
+        const colorIndex = get().sessions.length % CURVE_COLORS.length;
+        const s: Session = {
+          id,
+          name,
+          createdAt: now,
+          updatedAt: now,
+          micProfileId: 'flat',
+          color: CURVE_COLORS[colorIndex],
+          tag: 'other',
+          geometry: { ...DEFAULT_GEOMETRY },
+          measurements: [],
+        };
+        set((st) => ({ sessions: [s, ...st.sessions] }));
         return id;
       },
-      deleteSession: (id) => set((st) => ({
-        sessions: st.sessions.filter((s) => s.id !== id),
-        activeSessionId: st.activeSessionId === id ? null : st.activeSessionId,
-      })),
-      renameSession: (id, name) => set((st) => ({
-        sessions: st.sessions.map((s) => s.id === id ? { ...s, name, updatedAt: Date.now() } : s),
-      })),
-      setActiveSession: (id) => set({ activeSessionId: id }),
-      setSessionMicProfile: (sessionId, micProfileId) => set((st) => ({
-        sessions: st.sessions.map((s) => s.id === sessionId ? { ...s, micProfileId, updatedAt: Date.now() } : s),
+
+      updateSession: (id, patch) => set((st) => ({
+        sessions: st.sessions.map((s) =>
+          s.id !== id ? s : { ...s, ...patch, updatedAt: Date.now() }
+        ),
       })),
 
-      addVariant: (sessionId, name, tag, notes) => {
-        const id = uid();
-        set((st) => ({
-          sessions: st.sessions.map((s) => {
-            if (s.id !== sessionId) return s;
-            const color = CURVE_COLORS[s.variants.length % CURVE_COLORS.length];
-            const v: Variant = { id, name, tag, notes, color, measurements: [] };
-            return { ...s, variants: [...s.variants, v], updatedAt: Date.now() };
-          }),
-        }));
-        return id;
-      },
-      updateVariant: (sessionId, variantId, patch) => set((st) => ({
-        sessions: st.sessions.map((s) => s.id !== sessionId ? s : {
-          ...s, updatedAt: Date.now(),
-          variants: s.variants.map((v) => v.id === variantId ? { ...v, ...patch } : v),
-        }),
-      })),
-      deleteVariant: (sessionId, variantId) => set((st) => ({
-        sessions: st.sessions.map((s) => s.id !== sessionId ? s : {
-          ...s, updatedAt: Date.now(),
-          variants: s.variants.filter((v) => v.id !== variantId),
-        }),
+      addMeasurement: (sessionId, m) => set((st) => ({
+        sessions: st.sessions.map((s) =>
+          s.id !== sessionId ? s : { ...s, measurements: [...s.measurements, m], updatedAt: Date.now() }
+        ),
       })),
 
-      addMeasurement: (sessionId, variantId, m) => set((st) => ({
-        sessions: st.sessions.map((s) => s.id !== sessionId ? s : {
-          ...s, updatedAt: Date.now(),
-          variants: s.variants.map((v) => v.id !== variantId ? v : { ...v, measurements: [...v.measurements, m] }),
-        }),
+      deleteMeasurement: (sessionId, measurementId) => set((st) => ({
+        sessions: st.sessions.map((s) =>
+          s.id !== sessionId ? s : {
+            ...s,
+            measurements: s.measurements.filter((m) => m.id !== measurementId),
+            updatedAt: Date.now(),
+          }
+        ),
       })),
-      deleteMeasurement: (sessionId, variantId, measurementId) => set((st) => ({
-        sessions: st.sessions.map((s) => s.id !== sessionId ? s : {
-          ...s, updatedAt: Date.now(),
-          variants: s.variants.map((v) => v.id !== variantId ? v : { ...v, measurements: v.measurements.filter((m) => m.id !== measurementId) }),
-        }),
-      })),
-      updateMeasurement: (sessionId, variantId, measurementId, patch) => set((st) => ({
-        sessions: st.sessions.map((s) => s.id !== sessionId ? s : {
-          ...s, updatedAt: Date.now(),
-          variants: s.variants.map((v) => v.id !== variantId ? v : {
-            ...v, measurements: v.measurements.map((m) => m.id === measurementId ? { ...m, ...patch } : m),
-          }),
-        }),
+
+      updateMeasurement: (sessionId, measurementId, patch) => set((st) => ({
+        sessions: st.sessions.map((s) =>
+          s.id !== sessionId ? s : {
+            ...s,
+            updatedAt: Date.now(),
+            measurements: s.measurements.map((m) => m.id === measurementId ? { ...m, ...patch } : m),
+          }
+        ),
       })),
 
       addCustomProfile: (p) => set((st) => ({ customProfiles: [...st.customProfiles, p] })),
@@ -115,10 +92,10 @@ export const useSessionStore = create<SessionState>()(
     }),
     {
       name: 'soundbench-sessions',
-      version: 4,
+      version: 5,
       // Exclude the ungated impulse response from persistence. At 250 ms × 48 kHz
       // it's still ~150 KB per measurement, and several sessions × several
-      // variants × several measurements will exceed localStorage's ~5 MB quota.
+      // measurements will exceed localStorage's ~5 MB quota.
       // The waterfall view falls back to the gated `impulseResponse` when
       // `fullImpulseResponse` is empty, so loaded sessions still render — just
       // with slightly less time-domain detail in the CSD plot.
@@ -126,14 +103,12 @@ export const useSessionStore = create<SessionState>()(
         ...state,
         sessions: state.sessions.map((s) => ({
           ...s,
-          variants: s.variants.map((v) => ({
-            ...v,
-            measurements: v.measurements.map((m) => ({ ...m, fullImpulseResponse: [] })),
-          })),
+          measurements: s.measurements.map((m) => ({ ...m, fullImpulseResponse: [] })),
         })),
       }),
       migrate: (persisted: any, version) => {
         if (!persisted?.sessions) return persisted;
+
         if (version < 2) {
           for (const s of persisted.sessions) {
             for (const v of s.variants || []) {
@@ -142,9 +117,6 @@ export const useSessionStore = create<SessionState>()(
           }
         }
         if (version < 3) {
-          // Old measurements only had `frequencyResponse` (smoothed). Mirror it into
-          // smoothedResponse so the new raw/smoothed toggle has a fallback, and stub
-          // the new ungated IR field.
           for (const s of persisted.sessions) {
             for (const v of s.variants || []) {
               for (const m of v.measurements || []) {
@@ -167,6 +139,29 @@ export const useSessionStore = create<SessionState>()(
             }
           }
         }
+        if (version < 5) {
+          // Flatten the Variant[] wrapper into the Session directly.
+          // Take the first variant's data; discard any additional variants.
+          for (const s of persisted.sessions) {
+            const v = s.variants?.[0];
+            if (v) {
+              s.color = v.color || CURVE_COLORS[0];
+              s.tag = v.tag || 'other';
+              if (v.notes) s.notes = v.notes;
+              s.geometry = v.geometry || { ...DEFAULT_GEOMETRY };
+              s.measurements = v.measurements || [];
+            } else {
+              s.color = CURVE_COLORS[0];
+              s.tag = 'other';
+              s.geometry = { ...DEFAULT_GEOMETRY };
+              s.measurements = s.measurements || [];
+            }
+            delete s.variants;
+          }
+          // Remove the top-level activeSessionId field if present.
+          delete persisted.activeSessionId;
+        }
+
         return persisted;
       },
     }

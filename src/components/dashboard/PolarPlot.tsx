@@ -1,8 +1,15 @@
 import { useMemo } from 'react';
-import type { Variant } from '../../types';
+import type { Measurement } from '../../types';
+
+interface PolarEntry {
+  id: string;
+  name: string;
+  color: string;
+  measurements: Measurement[];
+}
 
 // Simple SVG polar plot of SPL vs angle at a chosen frequency.
-export function PolarPlot({ variants, frequency = 1000, size = 360 }: { variants: Variant[]; frequency?: number; size?: number }) {
+export function PolarPlot({ variants, frequency = 1000, size = 360 }: { variants: PolarEntry[]; frequency?: number; size?: number }) {
   const cx = size / 2;
   const cy = size / 2;
   const maxR = size / 2 - 30;

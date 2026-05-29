@@ -11,8 +11,6 @@
     "test:snr": "tsx scripts/runSnrTest.ts"
   },
   "dependencies": {
-    "@radix-ui/react-dialog": "^1.1.15",
-    "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-tooltip": "^1.2.8",
     "fft.js": "^4.0.4",
     "html2canvas": "^1.4.1",
