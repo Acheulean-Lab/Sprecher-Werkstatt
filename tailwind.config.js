@@ -16,6 +16,8 @@ export default {
         success: '#FAF600',
         warn: '#FF9E00',
         danger: '#F02640',
+        // Completion / acknowledged state — matches Figma checkmark purple
+        complete: '#9D5FF9',
         chartbg: '#000000',
         chartgrid: '#2A2A2E',
         charttext: '#9CA3A0',

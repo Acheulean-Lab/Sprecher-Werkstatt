@@ -70,32 +70,38 @@ body {
 
   /* Shared typographic utilities ─────────────────────────────────────────── */
 
-  /* IBM Plex Mono labels: buttons, stepper, numeric readouts */
+  /* IBM Plex Mono labels: buttons, stepper, numeric readouts.
+   * Content-area uses are text-sm; Stepper pins itself to text-base via !text-base. */
   .text-mono-label {
-    @apply font-mono text-base uppercase tracking-[0.04em];
+    @apply font-mono text-sm uppercase tracking-[0.04em];
   }
 
   /* Univers Light body copy — section descriptions, hints */
   .text-body {
-    @apply font-sans font-light text-base capitalize tracking-[0.04em] text-white;
+    @apply font-sans font-light text-sm capitalize tracking-[0.04em] text-white;
   }
 
   /* Univers Bold section headings */
   .text-section-heading {
-    @apply font-sans font-bold text-base capitalize tracking-[0.04em] text-white;
+    @apply font-sans font-bold text-sm capitalize tracking-[0.04em] text-white;
   }
 
-  /* Outlined terminal button (h-12, Mono, uppercase) — used on Calibrate step */
+  /* Outlined terminal button — height kept at 40px to match the reduced type. */
   .terminal-btn {
-    @apply h-12 px-3 border border-white bg-transparent font-mono text-base uppercase tracking-[0.04em] text-white
+    @apply h-10 px-3 border border-white bg-transparent font-mono text-sm uppercase tracking-[0.04em] text-white
            hover:border-accent hover:text-accent transition-colors
            disabled:opacity-40 disabled:cursor-not-allowed
            focus:outline-none focus:ring-2 focus:ring-accent/30;
   }
 
-  /* Univers Light 28px page title — used in the wizard header */
+  /* Univers Light 20px page title — content-area titles (section titles scroll) */
   .text-page-title {
-    @apply text-[28px] font-normal capitalize tracking-[0.04em] text-white;
+    @apply text-xl font-normal capitalize tracking-[0.04em] text-white;
+  }
+
+  /* Univers Bold 20px — Setup editable project-name title */
+  .text-page-title-bold {
+    @apply text-xl font-bold capitalize tracking-[0.04em] text-white;
   }
 
   /* 1 px white hairline divider between content sections */

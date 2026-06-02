@@ -53,7 +53,7 @@ export function Stepper({ labels, activeIndex }: StepperProps) {
   }, [activeIndex]);
 
   return (
-    <div className="relative flex items-start gap-[18px] py-1">
+    <div className="relative flex items-start gap-[18px] pb-1">
       {labels.map((label, i) => {
         const active = i === activeIndex;
         return (
@@ -63,7 +63,7 @@ export function Stepper({ labels, activeIndex }: StepperProps) {
             className="flex items-start h-7 px-2"
           >
             <span
-              className={`text-mono-label ${active ? 'text-white' : 'text-[#939393]'}`}
+              className={`text-mono-label !text-base ${active ? 'text-white' : 'text-[#939393]'}`}
               style={{ transition: `color ${FADE_MS}ms ${EASE}` }}
             >
               {label}

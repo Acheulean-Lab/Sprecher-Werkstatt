@@ -2,14 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { Button } from '../ui/Button';
-import { Input, Label, Select, Textarea } from '../ui/Input';
+import { Input, Label, Textarea } from '../ui/Input';
 import { InfoDot } from '../ui/Tooltip';
 import { Stepper } from '../ui/Stepper';
 import { TerminalButton } from '../ui/TerminalButton';
-import { LevelMeter } from '../ui/LevelMeter';
+import { TerminalDropdown } from '../ui/TerminalDropdown';
+import { AudioLevelMeter } from '../ui/AudioLevelMeter';
 import { BUILT_IN_PROFILES, parseCalFile } from '../../data/micProfiles';
 import { POSITION_PRESETS, DEFAULT_GEOMETRY } from '../../types';
-import type { Measurement, MicProfile, SpeakerGeometry, DriverPosition, EnclosureType, VariantTag } from '../../types';
+import type { Measurement, MicProfile, SpeakerGeometry, DriverPosition, EnclosureType } from '../../types';
 import { SpeakerCube } from '../ui/SpeakerCube';
 import { generateLogSweep } from '../../engine/sweepGenerator';
 import { capture, listAudioDevices, playTestTone, refreshDeviceLabels } from '../../engine/recorder';
@@ -48,19 +49,21 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
 
   // ── Setup state ─────────────────────────────────────────────────────────
   const [sessionName, setSessionName] = useState(session?.name || '');
-  const [sessionTag, setSessionTag] = useState<VariantTag>(session?.tag || 'other');
-  const [sessionNotes, setSessionNotes] = useState(session?.notes || '');
+  // tag and notes are still part of the data model, but no longer surfaced on
+  // Setup — the new Figma collapsed those affordances. We leave the existing
+  // values untouched when committing.
   const [geometry, setGeometry] = useState<SpeakerGeometry>(() => session?.geometry ?? { ...DEFAULT_GEOMETRY });
   const [micProfileId, setMicProfileId] = useState<string | null>(session?.micProfileId || 'flat');
   const [inputDeviceId, setInputDeviceId] = useState<string | null>(settings.inputDeviceId);
   const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
 
   // ── Calibrate state ─────────────────────────────────────────────────────
-  const [noiseFloor, setNoiseFloor] = useState<{ f: number; db: number }[] | null>(null);
+  // Each section has three UI states: before / during / after
+  const [noiseState, setNoiseState] = useState<'before' | 'during' | 'after'>('before');
   const [noiseWarning, setNoiseWarning] = useState<string | null>(null);
-  const [tonePlaying, setTonePlaying] = useState(false);
+  const [toneState, setToneState] = useState<'before' | 'during' | 'after'>('before');
   const stopToneRef = useRef<(() => void) | null>(null);
-  const [outputLevelOk, setOutputLevelOk] = useState(false);
+  const [calibLiveLevel, setCalibLiveLevel] = useState(-60);
 
   // ── Capture state ───────────────────────────────────────────────────────
   const [captureSub, setCaptureSub] = useState<CaptureSub>('pick');
@@ -99,12 +102,12 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
   // Auto-stop the calibration test tone the moment the user leaves the
   // Calibrate step.
   useEffect(() => {
-    if (step !== 'calibrate' && tonePlaying) {
+    if (step !== 'calibrate' && toneState === 'during') {
       stopToneRef.current?.();
       stopToneRef.current = null;
-      setTonePlaying(false);
+      setToneState('before');
     }
-  }, [step, tonePlaying]);
+  }, [step, toneState]);
 
   // Spacebar → stop sweep; arrow keys → step navigation
   useEffect(() => {
@@ -128,13 +131,13 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
   // ── Step navigation ─────────────────────────────────────────────────────
   const stepIdx = STEPS.indexOf(step);
   const canAdvance = (from: Step): boolean => {
-    if (from === 'calibrate') return outputLevelOk;
+    if (from === 'calibrate') return toneState === 'after';
     if (from === 'capture') return measurements.length > 0;
     return true;
   };
   const goNext = () => {
     if (step === 'setup') return commitSetupAndAdvance();
-    if (step === 'calibrate' && !outputLevelOk) return;
+    if (step === 'calibrate' && toneState !== 'after') return;
     if (step === 'capture' && measurements.length === 0) return;
     const next = STEPS[Math.min(STEPS.length - 1, stepIdx + 1)];
     setStep(next);
@@ -147,8 +150,6 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
   const commitSetupAndAdvance = () => {
     updateSession(sessionId, {
       name: sessionName.trim() || session.name,
-      tag: sessionTag,
-      notes: sessionNotes.trim() || undefined,
       geometry,
       micProfileId,
     });
@@ -167,40 +168,47 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
     setMicProfileId(id);
   };
 
-  const runNoiseCheck = async () => {
+  const startNoiseCheck = async () => {
+    setNoiseState('during');
+    setCalibLiveLevel(-60);
     try {
       const handle = await capture(inputDeviceId, null, 3, 48000);
-      handle.onLevel((v) => setLiveLevel(v));
+      handle.onLevel((v) => setCalibLiveLevel(v));
       captureHandleRef.current = handle;
-      setSweeping(true);
       await new Promise((r) => setTimeout(r, 3100));
       const { recording, sampleRate } = await handle.stop();
-      setSweeping(false);
       captureHandleRef.current = null;
-      const { spectrum, exceedsLowBand } = analyzeNoiseFloor(recording, sampleRate);
-      setNoiseFloor(spectrum);
-      setNoiseWarning(exceedsLowBand ? 'Low-frequency noise floor is above −50 dBFS. This will corrupt low-frequency measurements. Consider waiting for a quieter moment.' : null);
+      const { exceedsLowBand } = analyzeNoiseFloor(recording, sampleRate);
+      setNoiseWarning(exceedsLowBand ? 'Low-frequency noise is elevated. This may corrupt measurements below 500 Hz. Try again in a quieter moment.' : null);
+      setNoiseState('after');
       refreshDeviceLabels().then((d) => setInputDevices(d.inputs));
     } catch {
       alert('Could not access microphone. Grant permission in your browser/OS settings and try again.');
-      setSweeping(false);
+      setNoiseState('before');
     }
   };
 
-  const toggleTestTone = async () => {
-    if (tonePlaying) {
-      stopToneRef.current?.();
-      stopToneRef.current = null;
-      setTonePlaying(false);
-    } else {
-      try {
-        const stop = await playTestTone(1000, 600, 0.01);
-        stopToneRef.current = stop;
-        setTonePlaying(true);
-      } catch {
-        alert('Could not start the test tone. Check your audio output.');
-      }
+  const stopNoiseCheck = () => {
+    captureHandleRef.current?.abort();
+    captureHandleRef.current = null;
+    setNoiseState('before');
+    setCalibLiveLevel(-60);
+  };
+
+  const startTestTone = async () => {
+    try {
+      const stop = await playTestTone(1000, 600, 0.01);
+      stopToneRef.current = stop;
+      setToneState('during');
+    } catch {
+      alert('Could not start the test tone. Check your audio output.');
     }
+  };
+
+  const stopTestTone = () => {
+    stopToneRef.current?.();
+    stopToneRef.current = null;
+    setToneState('after');
   };
 
   // ── Capture handlers ────────────────────────────────────────────────────
@@ -302,7 +310,7 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
     <div ref={scrollerRef} className="flex-1 overflow-y-auto">
       {/* Sticky header zone — stepper sits centered. */}
       <div className="sticky top-0 z-20 bg-black">
-        <div className={`${step === 'analysis' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-8 pt-8 pb-4 relative flex justify-center items-center`}>
+        <div className={`${step === 'analysis' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-8 pt-4 pb-4 relative flex justify-center items-center`}>
           <Stepper labels={STEPS.map((s) => STEP_LABELS[s])} activeIndex={STEPS.indexOf(step)} />
           {step === 'analysis' && (
             <div className="absolute right-8">
@@ -312,8 +320,9 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
         </div>
       </div>
 
-      <div className={step === 'analysis' ? 'w-full' : 'max-w-3xl mx-auto px-8 pt-8 pb-10'}>
-        {step !== 'analysis' && (
+      {/* Setup gets tighter top padding — the editable title acts as the page header */}
+      <div className={step === 'analysis' ? 'w-full' : `max-w-3xl mx-auto px-8 pb-10 ${step === 'setup' ? 'pt-4' : 'pt-8'}`}>
+        {step !== 'analysis' && step !== 'setup' && (
           <h1 className="text-page-title mb-[60px]">
             {STEP_TITLES[step]}
           </h1>
@@ -321,201 +330,230 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
 
         {/* ─── Setup ──────────────────────────────────────────────────── */}
         {step === 'setup' && (
-          <div className="space-y-6">
-            <div>
-              <Input
-                id="session-name"
+          <div>
+            {/* ── Editable title — double as project-name input ──── */}
+            <div className="border-b border-white pb-3 mb-[80px]">
+              <input
+                type="text"
                 value={sessionName}
                 onChange={(e) => setSessionName(e.target.value)}
-                placeholder="e.g. Dayton RS150 — 0.5 L ported"
+                placeholder="Project Title"
+                className="w-full bg-transparent text-page-title-bold outline-none placeholder:text-white/40"
+                aria-label="Project title"
               />
             </div>
 
-            <Card>
-              <h3 className="text-sm font-semibold text-ink mb-3">Project details</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Type tag</Label>
-                  <Select value={sessionTag} onChange={(e) => setSessionTag(e.target.value as VariantTag)}>
-                    <option value="port length">Port length</option>
-                    <option value="enclosure type">Enclosure type</option>
-                    <option value="driver swap">Driver swap</option>
-                    <option value="EQ/DSP">EQ / DSP</option>
-                    <option value="other">Other</option>
-                  </Select>
-                </div>
-              </div>
-              <div className="mt-3">
-                <Label>Notes (optional)</Label>
-                <Textarea
-                  value={sessionNotes}
-                  onChange={(e) => setSessionNotes(e.target.value)}
-                  placeholder="Any details about this configuration"
-                />
-              </div>
-            </Card>
+            {/* ── Microphone Preferences ─────────────────────────── */}
+            <section className="mb-[80px]">
+              <h2 className="text-section-heading mb-[24px]">Microphone Preferences</h2>
 
-            <Card>
-              <h3 className="text-sm font-semibold text-ink mb-3">Speaker geometry</h3>
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <Label>Width (mm)</Label>
-                      <Input
-                        type="number"
-                        min={20}
-                        max={3000}
-                        value={geometry.widthMm}
-                        onChange={(e) => setGeometry({ ...geometry, widthMm: Math.max(1, parseFloat(e.target.value) || 0) })}
-                      />
-                    </div>
-                    <div>
-                      <Label>Height (mm)</Label>
-                      <Input
-                        type="number"
-                        min={20}
-                        max={3000}
-                        value={geometry.heightMm}
-                        onChange={(e) => setGeometry({ ...geometry, heightMm: Math.max(1, parseFloat(e.target.value) || 0) })}
-                      />
-                    </div>
-                    <div>
-                      <Label>Depth (mm)</Label>
-                      <Input
-                        type="number"
-                        min={20}
-                        max={3000}
-                        value={geometry.depthMm}
-                        onChange={(e) => setGeometry({ ...geometry, depthMm: Math.max(1, parseFloat(e.target.value) || 0) })}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label>Driver position</Label>
-                    <div className="flex gap-2">
-                      {(['front', 'top'] as DriverPosition[]).map((dp) => (
-                        <button
-                          key={dp}
-                          type="button"
-                          onClick={() => setGeometry({ ...geometry, driverPosition: dp })}
-                          className={`flex-1 h-9 rounded-btn text-sm capitalize border ${geometry.driverPosition === dp ? 'border-white text-ink' : 'border-border text-ink hover:border-white'}`}
-                        >
-                          {dp}-firing
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label>Enclosure</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {([
-                        { id: 'sealed', label: 'Sealed' },
-                        { id: 'rear-port', label: 'Rear port' },
-                        { id: 'bottom-port', label: 'Bottom port' },
-                      ] as { id: EnclosureType; label: string }[]).map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => setGeometry({ ...geometry, enclosure: opt.id })}
-                          className={`h-9 rounded-btn text-xs border ${geometry.enclosure === opt.id ? 'border-white text-ink' : 'border-border text-ink hover:border-white'}`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+              {/* Single horizontal row: INPUT [btn]  PROFILE [btn] */}
+              <div className="flex items-center gap-[32px]">
+                <div className="flex items-center gap-[16px]">
+                  <span className="text-mono-label text-white">Input</span>
+                  <TerminalDropdown
+                    value={inputDeviceId ?? ''}
+                    placeholder="Select"
+                    options={
+                      inputDevices.length === 0
+                        ? [{ value: '', label: 'Default' }]
+                        : inputDevices.map((d) => ({
+                            value: d.deviceId,
+                            label: d.label || `Device ${d.deviceId.slice(0, 8)}`,
+                          }))
+                    }
+                    onChange={(v) => setInputDeviceId(v || null)}
+                  />
                 </div>
 
-                <div className="flex items-center justify-center">
-                  <div className="aspect-square w-full max-w-[260px] flex items-center justify-center">
-                    <SpeakerCube geometry={geometry} size={260} zoom={1.44} interactive />
-                  </div>
+                <div className="flex items-center gap-[16px]">
+                  <span className="text-mono-label text-white">Profile</span>
+                  <TerminalDropdown
+                    value={micProfileId ?? 'flat'}
+                    placeholder="None"
+                    options={[
+                      ...allProfiles.map((p) => ({ value: p.id, label: p.name })),
+                      { value: '__upload__', label: 'Upload .cal…' },
+                    ]}
+                    onChange={(v) => {
+                      if (v === '__upload__') {
+                        const inp = document.createElement('input');
+                        inp.type = 'file'; inp.accept = '.cal,.txt';
+                        inp.onchange = () => { const f = inp.files?.[0]; if (f) handleUploadCal(f); };
+                        inp.click();
+                      } else {
+                        setMicProfileId(v);
+                      }
+                    }}
+                  />
                 </div>
               </div>
-              <p className="text-xs text-white font-light mt-3">Drag the speaker to inspect it from another angle — it snaps back to the default view when you release.</p>
-            </Card>
+            </section>
 
-            <Card>
-              <h3 className="text-sm font-semibold text-ink mb-3">Microphone</h3>
-              <Label>Profile <InfoDot text="Calibration curve that corrects for the mic's own frequency response. Upload a unit-specific .cal file when possible." /></Label>
-              <Select value={micProfileId ?? 'flat'} onChange={(e) => setMicProfileId(e.target.value)}>
-                {allProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </Select>
-              <div className="mt-3">
-                <input type="file" accept=".cal,.txt" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadCal(f); }} className="text-xs" />
-                <p className="text-xs text-white font-light mt-1">Upload a .cal / .txt file in REW or ARTA format.</p>
+            {/* ── Speaker Geometry ───────────────────────────────── */}
+            <section className="mb-[80px]">
+              <h2 className="text-section-heading mb-[24px]">Speaker Geometry</h2>
+
+              <div className="flex gap-[24px] items-start">
+                {/* Cube */}
+                <div className="w-[240px] h-[240px] shrink-0 flex items-center justify-center">
+                  <SpeakerCube geometry={geometry} size={240} zoom={1.44} interactive />
+                </div>
+
+                {/* Controls */}
+                <div className="flex flex-col gap-[24px] flex-1 justify-center self-stretch">
+
+                  {/* Dimensions */}
+                  <div className="flex items-center gap-[16px]">
+                    <span className="text-mono-label text-white shrink-0">Dimensions</span>
+                    <div className="flex gap-[12px] items-center">
+                      <DimInput label="W" value={geometry.widthMm} onChange={(v) => setGeometry({ ...geometry, widthMm: v })} />
+                      <DimInput label="H" value={geometry.heightMm} onChange={(v) => setGeometry({ ...geometry, heightMm: v })} />
+                      <DimInput label="D" value={geometry.depthMm} onChange={(v) => setGeometry({ ...geometry, depthMm: v })} />
+                    </div>
+                    <div className="border-b border-dashed border-white px-3 py-2">
+                      <span className="text-mono-label text-white">
+                        {(geometry.widthMm * geometry.heightMm * geometry.depthMm / 1_000_000).toFixed(1)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Driver */}
+                  <div className="flex items-center gap-[16px]">
+                    <span className="text-mono-label text-white shrink-0">Driver</span>
+                    {(['front', 'top'] as DriverPosition[]).map((dp) => (
+                      <TerminalButton
+                        key={dp}
+                        onClick={() => setGeometry({ ...geometry, driverPosition: dp })}
+                        className={geometry.driverPosition === dp ? '' : 'border-dashed'}
+                      >
+                        {dp}
+                      </TerminalButton>
+                    ))}
+                  </div>
+
+                  {/* Port */}
+                  <div className="flex items-center gap-[16px]">
+                    <span className="text-mono-label text-white shrink-0">Port</span>
+                    {([
+                      { id: 'sealed' as EnclosureType, label: 'None' },
+                      { id: 'bottom-port' as EnclosureType, label: 'Bottom' },
+                      { id: 'rear-port' as EnclosureType, label: 'Back' },
+                    ]).map((opt) => (
+                      <TerminalButton
+                        key={opt.id}
+                        onClick={() => setGeometry({ ...geometry, enclosure: opt.id })}
+                        className={geometry.enclosure === opt.id ? '' : 'border-dashed'}
+                      >
+                        {opt.label}
+                      </TerminalButton>
+                    ))}
+                  </div>
+
+                </div>
               </div>
-              <Label className="mt-4">Audio input device</Label>
-              <Select value={inputDeviceId ?? ''} onChange={(e) => setInputDeviceId(e.target.value || null)}>
-                {inputDevices.length === 0 && <option value="">Default</option>}
-                {inputDevices.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Device ${d.deviceId.slice(0, 8)}`}</option>)}
-              </Select>
-              <p className="text-xs text-white font-light mt-1">Output uses your OS default; route playback to the speaker under test in your system audio settings.</p>
-            </Card>
+            </section>
 
+            {/* ── Footer ─────────────────────────────────────────── */}
             <div className="flex justify-end">
-              <Button onClick={goNext} disabled={!canAdvance('setup')}>Continue to Calibrate →</Button>
+              <Button onClick={goNext} disabled={!canAdvance('setup')}>
+                Continue to Calibrate →
+              </Button>
             </div>
           </div>
         )}
 
         {/* ─── Calibrate ──────────────────────────────────────────────── */}
         {step === 'calibrate' && (
-          <div>
+          <div className="space-y-[80px]">
+
             {/* ── Background noise level ─────────────────────────────── */}
-            <section className="space-y-[12px] pb-[36px]">
-              <h2 className="text-section-heading">
-                Background noise level
-              </h2>
-              <p className="text-body pb-2">
+            <section className="space-y-[24px]">
+              <h2 className="text-section-heading">Background noise level</h2>
+              <p className="text-body">
                 Record three seconds of silence so we can show your room's noise floor. Stay quiet and turn off HVAC/fans if possible. Low-frequency noise (below 500 Hz) most often corrupts speaker measurements.
               </p>
-              <TerminalButton onClick={runNoiseCheck} disabled={sweeping}>
-                {noiseFloor ? 'Re-run level check' : 'Start level check'}
-              </TerminalButton>
-              {sweeping && <LevelMeter dbfs={liveLevel} />}
-              {noiseFloor && (
-                <FrequencyChart series={[{ name: 'Noise floor', color: '#F02640', data: noiseFloor }]} height={200} yMin={-120} yMax={0} />
+
+              {/* BEFORE */}
+              {noiseState === 'before' && (
+                <TerminalButton onClick={startNoiseCheck}>
+                  Start level check
+                </TerminalButton>
               )}
-              {noiseWarning && (
+
+              {/* DURING */}
+              {noiseState === 'during' && (
+                <div className="flex items-center gap-[16px]">
+                  <TerminalButton onClick={stopNoiseCheck}>Stop</TerminalButton>
+                  <AudioLevelMeter dbfs={calibLiveLevel} />
+                </div>
+              )}
+
+              {/* AFTER */}
+              {noiseState === 'after' && (
+                <div className="flex items-center gap-[12px]">
+                  <div className="w-7 h-7 rounded-full border border-complete flex items-center justify-center shrink-0">
+                    <span className="text-mono-label text-complete leading-none">✓</span>
+                  </div>
+                  <span className="text-mono-label text-complete">Level Set</span>
+                  <button
+                    onClick={() => { setNoiseState('before'); setCalibLiveLevel(-60); }}
+                    className="text-mono-label text-[#939393] border-b border-[#939393] px-2 h-7 inline-flex items-center hover:text-white hover:border-white transition-colors"
+                  >
+                    Recheck
+                  </button>
+                </div>
+              )}
+
+              {noiseWarning && noiseState === 'after' && (
                 <div className="p-3 bg-warn/50 text-sm text-warn">{noiseWarning}</div>
               )}
             </section>
 
             {/* ── Output level safety check ─────────────────────────── */}
-            <section className="space-y-[12px] pt-[36px] pb-[36px]">
-              <h2 className="text-section-heading">
-                Output level safety check
-              </h2>
-              <p className="text-body pb-2">
+            <section className="space-y-[24px]">
+              <h2 className="text-section-heading">Output level safety check</h2>
+              <p className="text-body">
                 Before any sweep, set a safe playback level. Start with your amplifier or system volume at the minimum, then slowly raise it. Never start at full volume — you could damage your speakers or hearing. Press Play test tone to send a soft 1 kHz reference tone while you set the dial.
               </p>
-              <div className="flex items-center gap-[25px] flex-wrap">
-                <TerminalButton onClick={toggleTestTone}>
-                  {tonePlaying ? 'Stop test tone' : 'Start test tone'}
-                </TerminalButton>
-                <span className="text-mono-label text-white">
-                  {tonePlaying ? 'tone playing' : '1 kHz · −40 dBFS'}
-                </span>
-              </div>
-              <label className="flex items-start gap-3 text-body">
-                <input
-                  type="checkbox"
-                  checked={outputLevelOk}
-                  onChange={(e) => setOutputLevelOk(e.target.checked)}
-                  className="mt-1 accent-white"
-                />
-                <span>I have set my volume to a safe level and I'm ready to measure.</span>
-              </label>
+
+              {/* BEFORE */}
+              {toneState === 'before' && (
+                <div className="flex items-center gap-[16px]">
+                  <TerminalButton onClick={startTestTone}>Start test tone</TerminalButton>
+                  <span className="text-mono-label text-white">1 kHz · −40 dBFS</span>
+                </div>
+              )}
+
+              {/* DURING */}
+              {toneState === 'during' && (
+                <div className="flex items-center gap-[16px]">
+                  <TerminalButton onClick={stopTestTone}>Stop</TerminalButton>
+                  <span className="text-mono-label text-white">1 kHz tone playing…</span>
+                </div>
+              )}
+
+              {/* AFTER */}
+              {toneState === 'after' && (
+                <div className="flex items-center gap-[12px]">
+                  <div className="w-7 h-7 rounded-full border border-complete flex items-center justify-center shrink-0">
+                    <span className="text-mono-label text-complete leading-none">✓</span>
+                  </div>
+                  <span className="text-mono-label text-complete">Level Set</span>
+                  <button
+                    onClick={() => setToneState('before')}
+                    className="text-mono-label text-[#939393] border-b border-[#939393] px-2 h-7 inline-flex items-center hover:text-white hover:border-white transition-colors"
+                  >
+                    Recheck
+                  </button>
+                </div>
+              )}
             </section>
 
             {/* ── Footer navigation ─────────────────────────────────── */}
-            <div className="flex justify-between pt-[32px]">
+            <div className="flex justify-between pt-[34px]">
               <Button variant="secondary" onClick={goPrev}>← Back</Button>
-              <Button onClick={goNext} disabled={!outputLevelOk}>Continue to Capture →</Button>
+              <Button onClick={goNext} disabled={toneState !== 'after'}>Continue to Capture →</Button>
             </div>
           </div>
         )}
@@ -606,7 +644,7 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
               <Card>
                 <h3 className="text-sm font-semibold text-ink mb-2">{processing ? 'Processing…' : 'Sweeping…'}</h3>
                 <p className="text-sm text-white font-light mb-4">Position: <b className="text-ink">{positionLabel}</b></p>
-                {sweeping && <LevelMeter dbfs={liveLevel} />}
+                {sweeping && <AudioLevelMeter dbfs={liveLevel} />}
                 {sweeping && (
                   <div className="mt-4">
                     <Button variant="danger" onClick={() => { captureHandleRef.current?.abort(); setSweeping(false); setCaptureSub('ready'); }}>Stop (Space)</Button>
@@ -691,6 +729,24 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
   );
 }
 
+
+/** W / H / D numeric input — IBM Plex Mono Bold cell with a 1 px solid
+ *  white underline.  Used by the Speaker Geometry dimensions row on Setup. */
+function DimInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <label className="border-b border-white px-3 py-2 flex items-center justify-center" aria-label={label}>
+      <input
+        type="number"
+        min={1}
+        max={3000}
+        value={value}
+        onChange={(e) => onChange(Math.max(1, parseFloat(e.target.value) || 0))}
+        placeholder={label}
+        className="w-12 bg-transparent text-center font-mono font-bold text-sm tracking-[0.04em] text-white outline-none placeholder:text-white capitalize [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      />
+    </label>
+  );
+}
 
 function Card({ children }: { children: React.ReactNode }) {
   return <div className="border border-border rounded-card p-5">{children}</div>;
