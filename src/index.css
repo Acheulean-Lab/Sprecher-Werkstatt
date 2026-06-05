@@ -112,13 +112,13 @@ body {
     @apply font-mono text-[10px] uppercase tracking-[0.14em] text-[#6B6B70];
   }
 
-  /* Departure-board / data row: soft-grey hairline on top, lifts to white on
-   * hover (matches the project's "grey default, white active" rule). */
+  /* Departure-board / data row: soft-grey hairline underneath each row, lifts
+   * to white on hover (matches the project's "grey default, white active" rule). */
   .data-row {
-    @apply border-t border-border transition-colors;
+    @apply border-b border-border transition-colors;
   }
   .data-row:hover {
-    @apply border-t-white;
+    @apply border-b-white;
   }
 
   /* Square line-art panel — replaces rounded cards for charts & data blocks. */

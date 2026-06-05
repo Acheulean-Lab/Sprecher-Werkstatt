@@ -9,11 +9,6 @@ import { exportSessionJson, importSessionJson } from './utils/export';
 import type { Session } from './types';
 import './engine/snrSelfTest';
 
-// Short engineering-style code derived from the session id, e.g. "SW·A1F3".
-function sessionCode(id: string): string {
-  return 'SW·' + id.slice(0, 4).toUpperCase();
-}
-
 // Compact relative time, departure-board style ("2 MIN", "3 HR", "5 DAY").
 function relativeTime(ts: number): string {
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
@@ -84,7 +79,7 @@ function App() {
               <h1 className="text-page-title-bold !text-[32px] leading-none">Sprecher-Werkstatt</h1>
               <p className="spec-label mt-3">Speaker Analysis Workbench · Log-Sweep Acoustic Measurement</p>
             </div>
-            <div className="flex items-center gap-[18px] pb-1">
+            <div className="flex items-center gap-[18px]">
               <MonoLink active onClick={newProject}>New</MonoLink>
               <MonoLink onClick={openImportDialog}>Load</MonoLink>
             </div>
@@ -93,7 +88,7 @@ function App() {
           {/* ── Project index (departure-board grid) ──────────────────── */}
           <div>
             {/* Column headers */}
-            <div className="grid grid-cols-[1fr_8rem_7rem_7rem_1.5rem] items-end gap-4 pb-2">
+            <div className="grid grid-cols-[1fr_8rem_7rem_7rem_1.5rem] items-end gap-4 pb-2 border-b border-border">
               <span className="spec-label">Project</span>
               <span className="spec-label">Config</span>
               <span className="spec-label text-right">Measurements</span>
@@ -112,12 +107,11 @@ function App() {
                   onClick={() => setView({ kind: 'wizard', sessionId: s.id })}
                   className="data-row group w-full grid grid-cols-[1fr_8rem_7rem_7rem_1.5rem] items-center gap-4 py-4 text-left"
                 >
-                  {/* Name + code */}
+                  {/* Name */}
                   <div className="min-w-0">
                     <div className="text-sm font-sans text-[#9CA3A0] group-hover:text-white transition-colors truncate capitalize">
                       {s.name || 'Untitled project'}
                     </div>
-                    <div className="spec-label mt-1">{sessionCode(s.id)}</div>
                   </div>
                   {/* Config / enclosure tag */}
                   <span className="font-mono text-xs uppercase tracking-[0.04em] text-[#6B6B70] group-hover:text-white transition-colors truncate">
@@ -136,8 +130,6 @@ function App() {
                 </button>
               ))
             )}
-            {/* Closing rule under the last row */}
-            <div className="border-t border-border" />
           </div>
 
         </div>
