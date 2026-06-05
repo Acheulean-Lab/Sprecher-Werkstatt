@@ -103,12 +103,14 @@ export function Waterfall({ measurement, height = 360 }: { measurement: Measurem
   }, [measurement]);
 
   return (
-    <div className="border border-border rounded-card p-4">
-      <div className="flex justify-between text-xs font-mono text-charttext uppercase tracking-wide mb-2">
-        <span>Cumulative spectral decay (CSD)</span>
-        <span>−80 → 0 dB · viridis</span>
+    <div className="panel">
+      <div className="panel-head">
+        <span className="spec-label">Cumulative spectral decay · CSD</span>
+        <span className="spec-label">−80 → 0 dB · viridis</span>
       </div>
-      <canvas ref={ref} width={760} height={height} className="w-full block" />
+      <div className="p-4">
+        <canvas ref={ref} width={760} height={height} className="w-full block" />
+      </div>
     </div>
   );
 }

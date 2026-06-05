@@ -1,12 +1,30 @@
 import { useEffect } from 'react';
 import { Logo } from './components/ui/Logo';
 import { MonoLink } from './components/ui/MonoLink';
+import { Arrow } from './components/ui/lineart';
 import { MeasurementWizard } from './components/wizard/MeasurementWizard';
 import { useViewStore } from './store/viewStore';
 import { useSessionStore } from './store/sessionStore';
-import { PageShell } from './components/layout/PageShell';
 import { exportSessionJson, importSessionJson } from './utils/export';
+import type { Session } from './types';
 import './engine/snrSelfTest';
+
+// Short engineering-style code derived from the session id, e.g. "SW·A1F3".
+function sessionCode(id: string): string {
+  return 'SW·' + id.slice(0, 4).toUpperCase();
+}
+
+// Compact relative time, departure-board style ("2 MIN", "3 HR", "5 DAY").
+function relativeTime(ts: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return 'JUST NOW';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} MIN`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} HR`;
+  const d = Math.floor(h / 24);
+  return `${d} DAY`;
+}
 
 function App() {
   const view = useViewStore((s) => s.view);
@@ -47,36 +65,83 @@ function App() {
   };
 
   const newProject = () => {
-    const id = useSessionStore.getState().createSession('Untitled project');
+    const id = useSessionStore.getState().createSession('');
     setView({ kind: 'wizard', sessionId: id });
   };
 
-  // Sort most-recently-updated first so the active project sits at the top.
+  // Most-recently-updated first.
   const orderedProjects = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
   let main: React.ReactNode;
   if (view.kind === 'empty') {
     main = (
-      <PageShell>
-        <div className="max-w-xl mx-auto text-center py-24">
-          <h2 className="inline-block tracking-[0.04em] uppercase text-3xl px-2 py-1 font-normal text-white mb-4 border-white border-2 rounded-md ">Sprecher-Werkstatt</h2>
-          <p className="text-md font-light text-white mb-4">Speaker analysis</p>
-          <div className="inline-flex flex-row gap-[18px]">
-            <MonoLink active onClick={newProject}>New</MonoLink>
-            <MonoLink onClick={openImportDialog}>Load</MonoLink>
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto px-12 pt-24 pb-24">
+
+          {/* ── Masthead ──────────────────────────────────────────────── */}
+          <div className="flex items-end justify-between mb-16">
+            <div>
+              <h1 className="text-page-title-bold !text-[32px] leading-none">Sprecher-Werkstatt</h1>
+              <p className="spec-label mt-3">Speaker Analysis Workbench · Log-Sweep Acoustic Measurement</p>
+            </div>
+            <div className="flex items-center gap-[18px] pb-1">
+              <MonoLink active onClick={newProject}>New</MonoLink>
+              <MonoLink onClick={openImportDialog}>Load</MonoLink>
+            </div>
           </div>
 
-          {/* Project list — one stacked button per saved session, most recent
-              at the top. Empty when no sessions exist yet. */}
-          <div className="mt-12 flex flex-col items-center gap-1">
-            {orderedProjects.map((s) => (
-              <MonoLink key={s.id} onClick={() => setView({ kind: 'wizard', sessionId: s.id })}>
-                {s.name}
-              </MonoLink>
-            ))}
+          {/* ── Project index (departure-board grid) ──────────────────── */}
+          <div>
+            {/* Column headers */}
+            <div className="grid grid-cols-[1fr_8rem_7rem_7rem_1.5rem] items-end gap-4 pb-2">
+              <span className="spec-label">Project</span>
+              <span className="spec-label">Config</span>
+              <span className="spec-label text-right">Measurements</span>
+              <span className="spec-label text-right">Updated</span>
+              <span />
+            </div>
+
+            {orderedProjects.length === 0 ? (
+              <div className="data-row py-8 text-center">
+                <span className="spec-label">No projects — press NEW to begin</span>
+              </div>
+            ) : (
+              orderedProjects.map((s: Session) => (
+                <button
+                  key={s.id}
+                  onClick={() => setView({ kind: 'wizard', sessionId: s.id })}
+                  className="data-row group w-full grid grid-cols-[1fr_8rem_7rem_7rem_1.5rem] items-center gap-4 py-4 text-left"
+                >
+                  {/* Name + code */}
+                  <div className="min-w-0">
+                    <div className="text-sm font-sans text-[#9CA3A0] group-hover:text-white transition-colors truncate capitalize">
+                      {s.name || 'Untitled project'}
+                    </div>
+                    <div className="spec-label mt-1">{sessionCode(s.id)}</div>
+                  </div>
+                  {/* Config / enclosure tag */}
+                  <span className="font-mono text-xs uppercase tracking-[0.04em] text-[#6B6B70] group-hover:text-white transition-colors truncate">
+                    {s.geometry?.enclosure ?? '—'}
+                  </span>
+                  {/* Measurement count */}
+                  <span className="font-mono text-sm tabular-nums text-[#9CA3A0] group-hover:text-white transition-colors text-right">
+                    {String(s.measurements.length).padStart(2, '0')}
+                  </span>
+                  {/* Updated */}
+                  <span className="font-mono text-xs uppercase tracking-[0.04em] text-[#6B6B70] group-hover:text-white transition-colors text-right">
+                    {relativeTime(s.updatedAt)}
+                  </span>
+                  {/* Arrow */}
+                  <span className="text-[#6B6B70] group-hover:text-accent transition-colors flex justify-end"><Arrow dir="right" size={16} /></span>
+                </button>
+              ))
+            )}
+            {/* Closing rule under the last row */}
+            <div className="border-t border-border" />
           </div>
+
         </div>
-      </PageShell>
+      </div>
     );
   } else if (view.kind === 'wizard') {
     main = <MeasurementWizard sessionId={view.sessionId} />;

@@ -37,10 +37,12 @@ export function PolarPlot({ variants, frequency = 1000, size = 360 }: { variants
   };
 
   return (
-    <div className="border border-border rounded-card p-4">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-mono text-charttext uppercase tracking-wide">SPL vs angle @ {frequency >= 1000 ? `${frequency / 1000} kHz` : `${frequency} Hz`}</div>
+    <div className="panel">
+      <div className="panel-head">
+        <span className="spec-label">SPL vs angle</span>
+        <span className="spec-label">@ {frequency >= 1000 ? `${frequency / 1000} kHz` : `${frequency} Hz`}</span>
       </div>
+      <div className="p-4">
       <svg width={size} height={size} className="block mx-auto">
         {[-10, 0, 10].map((db) => (
           <circle key={db} cx={cx} cy={cy} r={dbToR(db)} fill="none" stroke="#2A2A2E" strokeDasharray="2 3" />
@@ -70,10 +72,11 @@ export function PolarPlot({ variants, frequency = 1000, size = 360 }: { variants
       </svg>
       <div className="flex flex-wrap gap-3 justify-center mt-3">
         {variants.map((v) => (
-          <div key={v.id} className="flex items-center gap-2 text-xs text-charttext">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: v.color }} />{v.name}
+          <div key={v.id} className="flex items-center gap-2 spec-label">
+            <span className="w-2 h-2" style={{ backgroundColor: v.color }} />{v.name}
           </div>
         ))}
+      </div>
       </div>
     </div>
   );

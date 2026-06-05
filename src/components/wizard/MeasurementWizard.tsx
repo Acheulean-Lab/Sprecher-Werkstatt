@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { Button } from '../ui/Button';
-import { Input, Label, Textarea } from '../ui/Input';
-import { InfoDot } from '../ui/Tooltip';
+import { Input, Textarea } from '../ui/Input';
 import { Stepper } from '../ui/Stepper';
 import { TerminalButton } from '../ui/TerminalButton';
 import { TerminalDropdown } from '../ui/TerminalDropdown';
+import { Arrow, SectionHeading, CheckMark } from '../ui/lineart';
 import { AudioLevelMeter } from '../ui/AudioLevelMeter';
 import { BUILT_IN_PROFILES, parseCalFile } from '../../data/micProfiles';
 import { POSITION_PRESETS, DEFAULT_GEOMETRY } from '../../types';
@@ -149,7 +149,7 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
 
   const commitSetupAndAdvance = () => {
     updateSession(sessionId, {
-      name: sessionName.trim() || session.name,
+      name: sessionName.trim() || session.name || 'Untitled project',
       geometry,
       micProfileId,
     });
@@ -308,48 +308,51 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
 
   return (
     <div ref={scrollerRef} className="flex-1 overflow-y-auto">
-      {/* Sticky header zone — stepper sits centered. */}
+      {/* Sticky header zone — stepper sits centered. Same width for every step. */}
       <div className="sticky top-0 z-20 bg-black">
-        <div className={`${step === 'analysis' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-8 pt-4 pb-4 relative flex justify-center items-center`}>
+        <div className="max-w-4xl mx-auto px-8 pt-4 pb-4 flex justify-center items-center">
           <Stepper labels={STEPS.map((s) => STEP_LABELS[s])} activeIndex={STEPS.indexOf(step)} />
-          {step === 'analysis' && (
-            <div className="absolute right-8">
-              <Button variant="secondary" size="sm" onClick={() => setStep('capture')}>← Back to Capture</Button>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Setup gets tighter top padding — the editable title acts as the page header */}
-      <div className={step === 'analysis' ? 'w-full' : `max-w-3xl mx-auto px-8 pb-10 ${step === 'setup' ? 'pt-4' : 'pt-8'}`}>
-        {step !== 'analysis' && step !== 'setup' && (
-          <h1 className="text-page-title mb-[60px]">
-            {STEP_TITLES[step]}
-          </h1>
+      {/* Single content column — identical width and top padding on every step. */}
+      <div className="max-w-4xl mx-auto px-8 pb-10 pt-8">
+        {/* Step title — every step's title occupies the same 48px row, padded
+            px-4, so the text sits in the exact same place across steps. Setup is
+            an always-visible outlined box at the full body width. */}
+        {step === 'setup' ? (
+          <label className="group mb-[52px] mt-[38px] flex items-center h-10 w-full px-4 cursor-text border border-white">
+          {/* <label className="group mb-[52px] flex items-center h-12 w-full px-4 cursor-text border border-white"> */}
+            <input
+              type="text"
+              value={sessionName}
+              onChange={(e) => setSessionName(e.target.value)}
+              placeholder="Project Title"
+              aria-label="Session title"
+              autoComplete="off"
+              spellCheck={false}
+              className="w-full p-0 bg-transparent outline-none text-sm placeholder:text-[#9CA3A0] group-hover:placeholder:text-white"
+              // className="w-full p-0 bg-transparent outline-none text-page-title placeholder:text-[#9CA3A0] group-hover:placeholder:text-white"
+
+            
+            />
+          </label>
+        ) : (
+          <div className=" flex items-center h-12">
+          {/* <div className="mb-[52px] flex items-center h-12"> */}
+            {/* <h1 className="text-page-title">{STEP_TITLES[step]}</h1> */}
+          </div>
         )}
 
         {/* ─── Setup ──────────────────────────────────────────────────── */}
         {step === 'setup' && (
-          <div>
-            {/* ── Editable title — double as project-name input ──── */}
-            <div className="border-b border-white pb-3 mb-[80px]">
-              <input
-                type="text"
-                value={sessionName}
-                onChange={(e) => setSessionName(e.target.value)}
-                placeholder="Project Title"
-                className="w-full bg-transparent text-page-title-bold outline-none placeholder:text-white/40"
-                aria-label="Project title"
-              />
-            </div>
+          <div className="space-y-[72px]">
+            {/* ── Microphone Preferences (horizontal) ─────────────── */}
+            <section className="space-y-[24px]">
+              <SectionHeading>Microphone Preferences</SectionHeading>
 
-            {/* ── Microphone Preferences ─────────────────────────── */}
-            <section className="mb-[80px]">
-              <h2 className="text-section-heading mb-[24px]">Microphone Preferences</h2>
-
-              {/* Single horizontal row: INPUT [btn]  PROFILE [btn] */}
-              <div className="flex items-center gap-[32px]">
-                <div className="flex items-center gap-[16px]">
+              <div className="flex items-center gap-10 flex-wrap">
+                <div className="flex items-center gap-3">
                   <span className="text-mono-label text-white">Input</span>
                   <TerminalDropdown
                     value={inputDeviceId ?? ''}
@@ -366,7 +369,7 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
                   />
                 </div>
 
-                <div className="flex items-center gap-[16px]">
+                <div className="flex items-center gap-3">
                   <span className="text-mono-label text-white">Profile</span>
                   <TerminalDropdown
                     value={micProfileId ?? 'flat'}
@@ -391,36 +394,34 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
             </section>
 
             {/* ── Speaker Geometry ───────────────────────────────── */}
-            <section className="mb-[80px]">
-              <h2 className="text-section-heading mb-[24px]">Speaker Geometry</h2>
+            <section className="space-y-[24px]">
+              <SectionHeading>Speaker Geometry</SectionHeading>
 
-              <div className="flex gap-[24px] items-start">
-                {/* Cube */}
-                <div className="w-[240px] h-[240px] shrink-0 flex items-center justify-center">
-                  <SpeakerCube geometry={geometry} size={240} zoom={1.44} interactive />
+              <div className="flex gap-10 items-center">
+                {/* Interactive 3D cube — the highlight, presented clean */}
+                <div className="w-[300px] h-[300px] shrink-0 flex items-center justify-center">
+                  <SpeakerCube geometry={geometry} size={300} zoom={1.44} interactive />
                 </div>
 
-                {/* Controls */}
-                <div className="flex flex-col gap-[24px] flex-1 justify-center self-stretch">
-
+                {/* Control grid */}
+                <div className="grid grid-cols-[110px_1fr] gap-x-5 gap-y-6 items-center flex-1">
                   {/* Dimensions */}
-                  <div className="flex items-center gap-[16px]">
-                    <span className="text-mono-label text-white shrink-0">Dimensions</span>
-                    <div className="flex gap-[12px] items-center">
-                      <DimInput label="W" value={geometry.widthMm} onChange={(v) => setGeometry({ ...geometry, widthMm: v })} />
-                      <DimInput label="H" value={geometry.heightMm} onChange={(v) => setGeometry({ ...geometry, heightMm: v })} />
-                      <DimInput label="D" value={geometry.depthMm} onChange={(v) => setGeometry({ ...geometry, depthMm: v })} />
-                    </div>
-                    <div className="border-b border-dashed border-white px-3 py-2">
-                      <span className="text-mono-label text-white">
+                  <span className="text-mono-label text-white">Dimensions</span>
+                  <div className="flex gap-3 items-center">
+                    <DimInput label="W" value={geometry.widthMm} onChange={(v) => setGeometry({ ...geometry, widthMm: v })} />
+                    <DimInput label="H" value={geometry.heightMm} onChange={(v) => setGeometry({ ...geometry, heightMm: v })} />
+                    <DimInput label="D" value={geometry.depthMm} onChange={(v) => setGeometry({ ...geometry, depthMm: v })} />
+                    <div className="border-b border-dashed border-white px-3 py-2 ml-1">
+                      <span className="font-mono text-sm tabular-nums text-white">
                         {(geometry.widthMm * geometry.heightMm * geometry.depthMm / 1_000_000).toFixed(1)}
+                        <span className="font-mono text-sm tabular-nums text-white"> L</span>
                       </span>
                     </div>
                   </div>
 
                   {/* Driver */}
-                  <div className="flex items-center gap-[16px]">
-                    <span className="text-mono-label text-white shrink-0">Driver</span>
+                  <span className="text-mono-label text-white">Driver</span>
+                  <div className="flex gap-3">
                     {(['front', 'top'] as DriverPosition[]).map((dp) => (
                       <TerminalButton
                         key={dp}
@@ -433,8 +434,8 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
                   </div>
 
                   {/* Port */}
-                  <div className="flex items-center gap-[16px]">
-                    <span className="text-mono-label text-white shrink-0">Port</span>
+                  <span className="text-mono-label text-white">Port</span>
+                  <div className="flex gap-3">
                     {([
                       { id: 'sealed' as EnclosureType, label: 'None' },
                       { id: 'bottom-port' as EnclosureType, label: 'Bottom' },
@@ -449,15 +450,14 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
                       </TerminalButton>
                     ))}
                   </div>
-
                 </div>
               </div>
             </section>
 
             {/* ── Footer ─────────────────────────────────────────── */}
-            <div className="flex justify-end">
-              <Button onClick={goNext} disabled={!canAdvance('setup')}>
-                Continue to Calibrate →
+            <div className="flex justify-end pt-8">
+              <Button size="sm" onClick={goNext} disabled={!canAdvance('setup')}>
+                Continue to Calibrate <Arrow dir="right" />
               </Button>
             </div>
           </div>
@@ -465,45 +465,46 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
 
         {/* ─── Calibrate ──────────────────────────────────────────────── */}
         {step === 'calibrate' && (
-          <div className="space-y-[80px]">
+          <div className="space-y-[72px]">
 
             {/* ── Background noise level ─────────────────────────────── */}
             <section className="space-y-[24px]">
-              <h2 className="text-section-heading">Background noise level</h2>
+              <SectionHeading>Background noise level</SectionHeading>
               <p className="text-body">
                 Record three seconds of silence so we can show your room's noise floor. Stay quiet and turn off HVAC/fans if possible. Low-frequency noise (below 500 Hz) most often corrupts speaker measurements.
               </p>
 
-              {/* BEFORE */}
-              {noiseState === 'before' && (
-                <TerminalButton onClick={startNoiseCheck}>
-                  Start level check
-                </TerminalButton>
-              )}
+              {/* State row — fixed height so before/during/after don't shift the layout */}
+              <div className="min-h-[48px] flex items-center">
+                {/* BEFORE */}
+                {noiseState === 'before' && (
+                  <TerminalButton onClick={startNoiseCheck}>
+                    Start level check
+                  </TerminalButton>
+                )}
 
-              {/* DURING */}
-              {noiseState === 'during' && (
-                <div className="flex items-center gap-[16px]">
-                  <TerminalButton onClick={stopNoiseCheck}>Stop</TerminalButton>
-                  <AudioLevelMeter dbfs={calibLiveLevel} />
-                </div>
-              )}
-
-              {/* AFTER */}
-              {noiseState === 'after' && (
-                <div className="flex items-center gap-[12px]">
-                  <div className="w-7 h-7 rounded-full border border-complete flex items-center justify-center shrink-0">
-                    <span className="text-mono-label text-complete leading-none">✓</span>
+                {/* DURING */}
+                {noiseState === 'during' && (
+                  <div className="flex items-center gap-[16px]">
+                    <TerminalButton onClick={stopNoiseCheck}>Stop</TerminalButton>
+                    <AudioLevelMeter dbfs={calibLiveLevel} />
                   </div>
-                  <span className="text-mono-label text-complete">Level Set</span>
-                  <button
-                    onClick={() => { setNoiseState('before'); setCalibLiveLevel(-60); }}
-                    className="text-mono-label text-[#939393] border-b border-[#939393] px-2 h-7 inline-flex items-center hover:text-white hover:border-white transition-colors"
-                  >
-                    Recheck
-                  </button>
-                </div>
-              )}
+                )}
+
+                {/* AFTER */}
+                {noiseState === 'after' && (
+                  <div className="flex items-center gap-[12px]">
+                    <CheckMark size={28} className="text-complete" />
+                    <span className="text-mono-label text-complete">Level Set</span>
+                    <button
+                      onClick={() => { setNoiseState('before'); setCalibLiveLevel(-60); }}
+                      className="text-mono-label text-[#939393] border-b border-[#939393] px-2 h-7 inline-flex items-center hover:text-white hover:border-white transition-colors"
+                    >
+                      Recheck
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {noiseWarning && noiseState === 'after' && (
                 <div className="p-3 bg-warn/50 text-sm text-warn">{noiseWarning}</div>
@@ -512,72 +513,73 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
 
             {/* ── Output level safety check ─────────────────────────── */}
             <section className="space-y-[24px]">
-              <h2 className="text-section-heading">Output level safety check</h2>
+              <SectionHeading>Output level safety check</SectionHeading>
               <p className="text-body">
                 Before any sweep, set a safe playback level. Start with your amplifier or system volume at the minimum, then slowly raise it. Never start at full volume — you could damage your speakers or hearing. Press Play test tone to send a soft 1 kHz reference tone while you set the dial.
               </p>
 
-              {/* BEFORE */}
-              {toneState === 'before' && (
-                <div className="flex items-center gap-[16px]">
-                  <TerminalButton onClick={startTestTone}>Start test tone</TerminalButton>
-                  <span className="text-mono-label text-white">1 kHz · −40 dBFS</span>
-                </div>
-              )}
-
-              {/* DURING */}
-              {toneState === 'during' && (
-                <div className="flex items-center gap-[16px]">
-                  <TerminalButton onClick={stopTestTone}>Stop</TerminalButton>
-                  <span className="text-mono-label text-white">1 kHz tone playing…</span>
-                </div>
-              )}
-
-              {/* AFTER */}
-              {toneState === 'after' && (
-                <div className="flex items-center gap-[12px]">
-                  <div className="w-7 h-7 rounded-full border border-complete flex items-center justify-center shrink-0">
-                    <span className="text-mono-label text-complete leading-none">✓</span>
+              {/* State row — fixed height so before/during/after don't shift the layout */}
+              <div className="min-h-[48px] flex items-center">
+                {/* BEFORE */}
+                {toneState === 'before' && (
+                  <div className="flex items-center gap-[16px]">
+                    <TerminalButton onClick={startTestTone}>Start test tone</TerminalButton>
+                    <span className="text-mono-label text-white">1 kHz · −40 dBFS</span>
                   </div>
-                  <span className="text-mono-label text-complete">Level Set</span>
-                  <button
-                    onClick={() => setToneState('before')}
-                    className="text-mono-label text-[#939393] border-b border-[#939393] px-2 h-7 inline-flex items-center hover:text-white hover:border-white transition-colors"
-                  >
-                    Recheck
-                  </button>
-                </div>
-              )}
+                )}
+
+                {/* DURING */}
+                {toneState === 'during' && (
+                  <div className="flex items-center gap-[16px]">
+                    <TerminalButton onClick={stopTestTone}>Stop</TerminalButton>
+                    <span className="text-mono-label text-white">1 kHz tone playing…</span>
+                  </div>
+                )}
+
+                {/* AFTER */}
+                {toneState === 'after' && (
+                  <div className="flex items-center gap-[12px]">
+                    <CheckMark size={28} className="text-complete" />
+                    <span className="text-mono-label text-complete">Level Set</span>
+                    <button
+                      onClick={() => setToneState('before')}
+                      className="text-mono-label text-[#939393] border-b border-[#939393] px-2 h-7 inline-flex items-center hover:text-white hover:border-white transition-colors"
+                    >
+                      Recheck
+                    </button>
+                  </div>
+                )}
+              </div>
             </section>
 
             {/* ── Footer navigation ─────────────────────────────────── */}
-            <div className="flex justify-between pt-[34px]">
-              <Button variant="secondary" onClick={goPrev}>← Back</Button>
-              <Button onClick={goNext} disabled={toneState !== 'after'}>Continue to Capture →</Button>
+            <div className="flex justify-between pt-8">
+              <Button size="sm" variant="secondary" onClick={goPrev}><Arrow dir="left" /> Back</Button>
+              <Button size="sm" onClick={goNext} disabled={toneState !== 'after'}>Continue to Capture <Arrow dir="right" /></Button>
             </div>
           </div>
         )}
 
         {/* ─── Capture ────────────────────────────────────────────────── */}
         {step === 'capture' && (
-          <div className="space-y-6">
-            {/* Session header */}
-            <div className="flex items-center justify-between p-4 border border-border rounded-card">
-              <div className="flex items-center gap-3 text-sm">
-                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: session.color }} />
-                <span className="font-medium text-ink">{session.name}</span>
-                <span className="text-xs uppercase tracking-wide border border-border px-1.5 py-0.5 text-white font-light">{session.tag}</span>
-                <span className="text-white font-light">· {measurements.length} measurement{measurements.length === 1 ? '' : 's'}</span>
+          <div className="space-y-8">
+            {/* Session header — line-art row with spec labels */}
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div className="flex items-center gap-3">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#9D5FF9' }} />
+                <span className="font-mono text-sm uppercase tracking-[0.04em] text-white capitalize">{session.name}</span>
+                <span className="spec-label">{String(measurements.length).padStart(2, '0')} captured</span>
               </div>
-              <div className="flex items-center gap-2 text-xs text-white font-light">
-                <span className="text-success">●</span> Output level set
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#34D399' }} />
+                <span className="spec-label">Output level set</span>
               </div>
             </div>
 
             {/* PICK position */}
             {captureSub === 'pick' && (
               <>
-                <p className="text-sm text-white font-light">Pick the mic position for the next sweep. Each preset includes a placement guide.</p>
+                <p className="text-body">Pick the mic position for the next sweep. Each preset includes a placement guide.</p>
                 <div className="grid grid-cols-2 gap-3">
                   {POSITION_PRESETS.map((p) => {
                     const taken = measurements.some((m) => m.position === p.label);
@@ -585,7 +587,7 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
                       <button
                         key={p.id}
                         onClick={() => { setPositionId(p.id); setCaptureSub('ready'); }}
-                        className={`relative text-left rounded-card border p-4 transition-colors ${positionId === p.id ? 'border-white' : 'border-border hover:border-white'}`}
+                        className={`relative text-left border p-4 transition-colors ${positionId === p.id ? 'border-white' : 'border-border hover:border-white'}`}
                       >
                         <div className="flex items-center gap-3">
                           <SpeakerCube
@@ -595,29 +597,29 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
                             strokeWidth={1}
                             className="shrink-0"
                           />
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-ink flex items-center gap-2">
-                              {p.label}
-                              {taken && <span className="text-[10px] uppercase tracking-wide text-success">captured</span>}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-mono text-xs uppercase tracking-[0.04em] text-white flex items-center gap-2">
+                              <span className="truncate">{p.label}</span>
+                              {taken && <CheckMark size={12} className="text-success shrink-0" />}
                             </div>
-                            <div className="text-xs text-white font-light leading-snug mt-1">{p.hint}</div>
+                            <div className="text-body !text-xs leading-snug mt-1.5">{p.hint}</div>
                           </div>
                         </div>
                       </button>
                     );
                   })}
                 </div>
-                <Card>
-                  <Label>Or enter a custom position label</Label>
+                <div className="border-t border-border pt-4">
+                  <div className="spec-label mb-2">Or enter a custom position label</div>
                   <div className="flex gap-2">
                     <Input placeholder="e.g. 22° listening axis" value={customPositionLabel} onChange={(e) => setCustomPositionLabel(e.target.value)} />
-                    <Button variant="secondary" disabled={!customPositionLabel.trim()} onClick={() => { setPositionId('custom'); setCaptureSub('ready'); }}>Use this label</Button>
+                    <Button variant="secondary" disabled={!customPositionLabel.trim()} onClick={() => { setPositionId('custom'); setCaptureSub('ready'); }}>Use label</Button>
                   </div>
-                </Card>
-                <div className="flex justify-between">
-                  <Button variant="secondary" onClick={goPrev}>← Back to Calibrate</Button>
-                  <Button onClick={() => setStep('analysis')} disabled={measurements.length === 0}>
-                    Finish & view Analysis →
+                </div>
+                <div className="flex justify-between pt-2">
+                  <Button size="sm" variant="secondary" onClick={goPrev}><Arrow dir="left" /> Calibrate</Button>
+                  <Button size="sm" onClick={() => setStep('analysis')} disabled={measurements.length === 0}>
+                    Finish & view Analysis <Arrow dir="right" />
                   </Button>
                 </div>
               </>
@@ -625,89 +627,104 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
 
             {/* READY to sweep */}
             {captureSub === 'ready' && (
-              <Card>
-                <h3 className="text-sm font-semibold text-ink mb-2">Ready to sweep</h3>
-                <p className="text-sm text-white font-light">
-                  Position: <b className="text-ink">{positionLabel}</b><br />
-                  Sweep: {settings.sweepF1} Hz → {settings.sweepF2} Hz over {settings.sweepDuration}s<br />
-                  Gate: {settings.gateMs} ms <InfoDot text="Gating excludes room reflections arriving after the gate time. 5 ms is typical for far-field measurements at 1 m." />
-                </p>
-                <div className="mt-4 flex gap-2">
-                  <Button onClick={startSweep}>Start sweep</Button>
-                  <Button variant="secondary" onClick={() => setCaptureSub('pick')}>← Pick a different position</Button>
+              <div className="panel">
+                <div className="panel-head">
+                  <span className="spec-label">Ready to sweep</span>
+                  <span className="spec-label">{positionLabel}</span>
                 </div>
-              </Card>
+                <div className="p-5">
+                  <div className="grid grid-cols-3 gap-4 mb-5">
+                    <Metric label="Sweep range" value={`${settings.sweepF1}–${settings.sweepF2} Hz`} />
+                    <Metric label="Duration" value={`${settings.sweepDuration} s`} />
+                    <Metric label="Gate" value={`${settings.gateMs} ms`} />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button onClick={startSweep}>Start sweep</Button>
+                    <Button variant="secondary" onClick={() => setCaptureSub('pick')}><Arrow dir="left" /> Position</Button>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* SWEEPING */}
             {captureSub === 'sweeping' && (
-              <Card>
-                <h3 className="text-sm font-semibold text-ink mb-2">{processing ? 'Processing…' : 'Sweeping…'}</h3>
-                <p className="text-sm text-white font-light mb-4">Position: <b className="text-ink">{positionLabel}</b></p>
-                {sweeping && <AudioLevelMeter dbfs={liveLevel} />}
-                {sweeping && (
-                  <div className="mt-4">
-                    <Button variant="danger" onClick={() => { captureHandleRef.current?.abort(); setSweeping(false); setCaptureSub('ready'); }}>Stop (Space)</Button>
-                  </div>
-                )}
-                {processing && <p className="text-sm text-white font-light mt-4">Computing impulse response and frequency response…</p>}
-                {signalWarning && (
-                  <div className="mt-4 p-3 rounded-btn bg-warn/50 text-sm text-warn">{signalWarning}</div>
-                )}
-              </Card>
+              <div className="panel">
+                <div className="panel-head">
+                  <span className="spec-label">{processing ? 'Processing' : 'Sweeping'}</span>
+                  <span className="spec-label">{positionLabel}</span>
+                </div>
+                <div className="p-5">
+                  {sweeping && <AudioLevelMeter dbfs={liveLevel} />}
+                  {sweeping && (
+                    <div className="mt-4">
+                      <Button variant="danger" onClick={() => { captureHandleRef.current?.abort(); setSweeping(false); setCaptureSub('ready'); }}>Stop · Space</Button>
+                    </div>
+                  )}
+                  {processing && <p className="text-body mt-2">Computing impulse response and frequency response…</p>}
+                  {signalWarning && (
+                    <div className="mt-4 p-3 bg-warn/50 text-sm text-warn">{signalWarning}</div>
+                  )}
+                </div>
+              </div>
             )}
 
             {/* REVIEW */}
             {captureSub === 'review' && result && (
               <>
-                <Card>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-ink">Result · {positionLabel}</h3>
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="spec-label">Result · {positionLabel}</span>
                     {isFinite(result.metrics.snrDb) && (
-                      <span className={`text-xs font-mono ${result.metrics.snrDb < 10 ? 'text-danger' : result.metrics.snrDb < 20 ? 'text-warn' : 'text-success'}`}>
+                      <span className={`font-mono text-[10px] uppercase tracking-[0.14em] ${result.metrics.snrDb < 10 ? 'text-danger' : result.metrics.snrDb < 20 ? 'text-warn' : 'text-success'}`}>
                         SNR {result.metrics.snrDb.toFixed(1)} dB
                       </span>
                     )}
                   </div>
-                  <FrequencyChart series={reviewSeries} height={240} />
-                  {(() => {
-                    const snr = result.metrics.snrDb;
-                    if (!isFinite(snr)) return null;
-                    if (snr < 10) {
-                      return (
-                        <div className="mt-4 p-3 rounded-btn bg-danger/50 text-sm text-danger">
-                          <b>Measurement is invalid (SNR {snr.toFixed(1)} dB).</b> The impulse response is buried in noise — the speaker likely wasn't playing, the volume is too low, or the mic isn't picking up the sound. Re-take with the speaker actually playing and the mic in front of it.
-                        </div>
-                      );
-                    }
-                    if (snr < 20) {
-                      return (
-                        <div className="mt-4 p-3 rounded-btn bg-warn/50 text-sm text-warn">
-                          <b>Low signal quality (SNR {snr.toFixed(1)} dB).</b> Increase output volume, reduce ambient noise, or move the mic closer for a cleaner measurement.
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                  <dl className="grid grid-cols-5 gap-4 mt-4 text-sm">
-                    <Metric label="Sens @ 1kHz" value={`${result.metrics.sensitivity1k.toFixed(1)} dBFS`} />
-                    <Metric label="−3 dB low" value={result.metrics.minus3dbLow ? `${result.metrics.minus3dbLow.toFixed(0)} Hz` : '—'} />
-                    <Metric label="−10 dB low" value={result.metrics.minus10dbLow ? `${result.metrics.minus10dbLow.toFixed(0)} Hz` : '—'} />
-                    <Metric label="−3 dB high" value={result.metrics.minus3dbHigh ? `${(result.metrics.minus3dbHigh / 1000).toFixed(1)} kHz` : '—'} />
-                    <Metric label="IR SNR" value={isFinite(result.metrics.snrDb) ? `${result.metrics.snrDb.toFixed(1)} dB` : '—'} />
-                  </dl>
-                </Card>
-                <Card>
-                  <Label>Measurement name</Label>
-                  <Input value={measurementName} onChange={(e) => setMeasurementName(e.target.value)} placeholder={result.name} />
-                  <Label className="mt-3">Notes</Label>
-                  <Textarea value={measurementNotes} onChange={(e) => setMeasurementNotes(e.target.value)} placeholder="Optional notes about this take" />
-                </Card>
+                  <div className="p-5">
+                    <FrequencyChart series={reviewSeries} height={240} />
+                    {(() => {
+                      const snr = result.metrics.snrDb;
+                      if (!isFinite(snr)) return null;
+                      if (snr < 10) {
+                        return (
+                          <div className="mt-4 p-3 bg-danger/50 text-sm text-danger">
+                            <b>Measurement is invalid (SNR {snr.toFixed(1)} dB).</b> The impulse response is buried in noise — the speaker likely wasn't playing, the volume is too low, or the mic isn't picking up the sound. Re-take with the speaker actually playing and the mic in front of it.
+                          </div>
+                        );
+                      }
+                      if (snr < 20) {
+                        return (
+                          <div className="mt-4 p-3 bg-warn/50 text-sm text-warn">
+                            <b>Low signal quality (SNR {snr.toFixed(1)} dB).</b> Increase output volume, reduce ambient noise, or move the mic closer for a cleaner measurement.
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                    <dl className="grid grid-cols-5 gap-4 mt-5">
+                      <Metric label="Sens @ 1kHz" value={`${result.metrics.sensitivity1k.toFixed(1)} dBFS`} />
+                      <Metric label="−3 dB low" value={result.metrics.minus3dbLow ? `${result.metrics.minus3dbLow.toFixed(0)} Hz` : '—'} />
+                      <Metric label="−10 dB low" value={result.metrics.minus10dbLow ? `${result.metrics.minus10dbLow.toFixed(0)} Hz` : '—'} />
+                      <Metric label="−3 dB high" value={result.metrics.minus3dbHigh ? `${(result.metrics.minus3dbHigh / 1000).toFixed(1)} kHz` : '—'} />
+                      <Metric label="IR SNR" value={isFinite(result.metrics.snrDb) ? `${result.metrics.snrDb.toFixed(1)} dB` : '—'} />
+                    </dl>
+                  </div>
+                </div>
+                <div className="border border-border p-5 space-y-3">
+                  <div>
+                    <div className="spec-label mb-2">Measurement name</div>
+                    <Input value={measurementName} onChange={(e) => setMeasurementName(e.target.value)} placeholder={result.name} />
+                  </div>
+                  <div>
+                    <div className="spec-label mb-2">Notes</div>
+                    <Textarea value={measurementNotes} onChange={(e) => setMeasurementNotes(e.target.value)} placeholder="Optional notes about this take" />
+                  </div>
+                </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Button variant="secondary" onClick={discardAndRetake}>Re-take</Button>
+                  <Button size="sm" variant="secondary" onClick={discardAndRetake}>Re-take</Button>
                   <div className="flex gap-2">
-                    <Button variant="secondary" onClick={saveAndPickAnother}>Save · capture another position</Button>
-                    <Button onClick={saveAndFinish}>Save · finish & view Analysis →</Button>
+                    <Button size="sm" variant="secondary" onClick={saveAndPickAnother}>Save · another</Button>
+                    <Button size="sm" onClick={saveAndFinish}>Save · finish <Arrow dir="right" /></Button>
                   </div>
                 </div>
               </>
@@ -717,12 +734,10 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
 
         {/* ─── Analysis ───────────────────────────────────────────────── */}
         {step === 'analysis' && (
-          <>
-            <div className="max-w-6xl mx-auto px-8 pt-8">
-              <h1 className="text-2xl font-semibold text-ink mb-6">{session.name}</h1>
-            </div>
-            <Dashboard sessionId={sessionId} embedded />
-          </>
+          <Dashboard
+            sessionId={sessionId}
+            footerLeft={<Button size="sm" variant="secondary" onClick={() => setStep('capture')}><Arrow dir="left" /> Back to Capture</Button>}
+          />
         )}
       </div>
     </div>
@@ -748,15 +763,12 @@ function DimInput({ label, value, onChange }: { label: string; value: number; on
   );
 }
 
-function Card({ children }: { children: React.ReactNode }) {
-  return <div className="border border-border rounded-card p-5">{children}</div>;
-}
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-xs text-white font-light">{label}</div>
-      <div className="text-sm font-mono text-ink mt-0.5">{value}</div>
+      <div className="spec-label">{label}</div>
+      <div className="font-mono text-sm tabular-nums text-white mt-1">{value}</div>
     </div>
   );
 }

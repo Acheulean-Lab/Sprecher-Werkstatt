@@ -80,11 +80,16 @@ export function FrequencyChart({ series, height = 420, yMin, yMax, diffSeries }:
   const finalMax = yMax ?? autoMax;
 
   if (series.length === 0) {
-    return <div className="h-40 flex items-center justify-center text-sm text-charttext border border-border rounded-card">No data</div>;
+    return <div className="h-40 flex items-center justify-center spec-label panel">No data</div>;
   }
 
   return (
-    <div className="border border-border rounded-card p-4">
+    <div className="panel">
+      <div className="panel-head">
+        <span className="spec-label">SPL · dB / Hz</span>
+        <span className="spec-label">20 – 20k Hz · log</span>
+      </div>
+      <div className="p-4">
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={merged} margin={{ top: 10, right: 40, left: 0, bottom: 10 }}>
           <CartesianGrid stroke="#2A2A2E" strokeDasharray="3 3" />
@@ -113,7 +118,7 @@ export function FrequencyChart({ series, height = 420, yMin, yMax, diffSeries }:
             <YAxis yAxisId="diff" orientation="right" domain={[-20, 20]} stroke="#6B6760" tick={{ fill: '#6B6760', fontSize: 11, fontFamily: 'IBM Plex Mono' }} />
           )}
           <Tooltip
-            contentStyle={{ background: '#000000', border: '1px solid #3F3F46', borderRadius: 6, fontSize: 12 }}
+            contentStyle={{ background: '#000000', border: '1px solid #3F3F46', borderRadius: 0, fontSize: 12 }}
             labelFormatter={(v) => `${Math.round(Math.pow(10, Number(v)))} Hz`}
             formatter={(val: unknown, name: unknown) => [`${Number(val).toFixed(1)} dB`, String(name)]}
             itemStyle={{ color: '#9C9A96' }}
@@ -128,6 +133,7 @@ export function FrequencyChart({ series, height = 420, yMin, yMax, diffSeries }:
           )}
         </ComposedChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 }

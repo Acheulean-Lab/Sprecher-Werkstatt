@@ -104,9 +104,36 @@ body {
     @apply text-xl font-bold capitalize tracking-[0.04em] text-white;
   }
 
-  /* 1 px white hairline divider between content sections */
-  .section-divider {
-    @apply border-b border-white;
+  /* ── Technical-drawing / Swiss-grid vocabulary ──────────────────────────── */
+
+  /* Tiny muted mono annotation — column headers, coordinate / spec marks in
+   * margins. Wider tracking gives it the engineering-drawing cadence. */
+  .spec-label {
+    @apply font-mono text-[10px] uppercase tracking-[0.14em] text-[#6B6B70];
+  }
+
+  /* Departure-board / data row: soft-grey hairline on top, lifts to white on
+   * hover (matches the project's "grey default, white active" rule). */
+  .data-row {
+    @apply border-t border-border transition-colors;
+  }
+  .data-row:hover {
+    @apply border-t-white;
+  }
+
+  /* Square line-art panel — replaces rounded cards for charts & data blocks. */
+  .panel {
+    @apply border border-border bg-black;
+  }
+  /* Panel header strip: a spec-label rule line above the panel content. */
+  .panel-head {
+    @apply flex items-center justify-between px-3 h-8 border-b border-border;
+  }
+
+  /* Datum box — short code/letter inside a bordered square (GD&T motif). */
+  .datum-box {
+    @apply inline-flex items-center justify-center border border-white px-1.5 h-6
+           font-mono text-xs uppercase tracking-[0.04em] text-white leading-none;
   }
 }
 

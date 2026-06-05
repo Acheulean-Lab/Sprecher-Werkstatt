@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useSessionStore } from '../../store/sessionStore';
-import { useViewStore } from '../../store/viewStore';
-import { PageShell } from '../layout/PageShell';
 import { Button } from '../ui/Button';
 import { FrequencyChart } from './FrequencyChart';
 import { PolarPlot } from './PolarPlot';
@@ -11,10 +10,9 @@ import { CURVE_COLORS } from '../../types';
 
 type Tab = 'fr' | 'directivity' | 'waterfall';
 
-export function Dashboard({ sessionId, embedded = false }: { sessionId: string; embedded?: boolean }) {
+export function Dashboard({ sessionId, footerLeft }: { sessionId: string; footerLeft?: ReactNode }) {
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === sessionId));
   const deleteMeasurement = useSessionStore((s) => s.deleteMeasurement);
-  const setView = useViewStore((s) => s.setView);
 
   const [tab, setTab] = useState<Tab>('fr');
   const [smoothed, setSmoothed] = useState(true);
@@ -71,11 +69,8 @@ export function Dashboard({ sessionId, embedded = false }: { sessionId: string; 
     setHiddenIds(next);
   };
 
-  const actions = (
+  const exportActions = (
     <>
-      {!embedded && (
-        <Button size="sm" variant="secondary" onClick={() => setView({ kind: 'empty' })}>Home</Button>
-      )}
       <Button size="sm" variant="secondary" onClick={() => exportCsv(session)}>Export CSV</Button>
       <Button size="sm" variant="secondary" onClick={() => pdfRef.current && exportPdf(pdfRef.current, session)}>Export PDF</Button>
     </>
@@ -83,105 +78,110 @@ export function Dashboard({ sessionId, embedded = false }: { sessionId: string; 
 
   const body = (
     <div ref={pdfRef}>
-      <div className="flex gap-1 border-b border-border mb-6">
+      {/* Mono uppercase tabs with hairline rule */}
+      <div className="flex gap-6 border-b border-border mb-8">
         {([['fr', 'Frequency'], ['directivity', 'Directivity'], ['waterfall', 'Waterfall']] as const).map(([v, l]) => (
-          <button key={v} onClick={() => setTab(v)} className={`px-4 py-2 text-sm border-b-2 -mb-px ${tab === v ? 'border-accent text-ink font-medium' : 'border-transparent text-white font-light hover:text-ink'}`}>{l}</button>
+          <button
+            key={v}
+            onClick={() => setTab(v)}
+            className={`pb-3 -mb-px border-b font-mono text-sm uppercase tracking-[0.04em] transition-colors ${tab === v ? 'border-white text-white' : 'border-transparent text-[#6B6B70] hover:text-white'}`}
+          >
+            {l}
+          </button>
         ))}
       </div>
 
       {tab === 'fr' && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm text-white font-light">
-              <input type="checkbox" checked={smoothed} onChange={(e) => setSmoothed(e.target.checked)} />
-              1/24-octave smoothed
-            </label>
-          </div>
+        <div className="space-y-8">
+          <label className="flex items-center gap-2 spec-label cursor-pointer">
+            <input type="checkbox" checked={smoothed} onChange={(e) => setSmoothed(e.target.checked)} />
+            1/24-octave smoothed
+          </label>
+
           <FrequencyChart series={series} />
 
-          <div className="flex flex-wrap gap-2 mt-2">
+          {/* Series toggles — line-art chips */}
+          <div className="flex flex-wrap gap-2">
             {allMeasurements.map(({ color, m }) => {
               const hidden = hiddenIds.has(m.id);
               return (
                 <button
                   key={m.id}
                   onClick={() => toggle(m.id)}
-                  className={`flex items-center gap-2 rounded-btn border px-3 py-1.5 text-xs ${hidden ? 'bg-surface border-border text-white font-light line-through' : 'bg-surface border-border text-ink'}`}
+                  className={`flex items-center gap-2 border px-3 h-8 font-mono text-xs uppercase tracking-[0.04em] transition-colors ${hidden ? 'border-border text-[#6B6B70] line-through' : 'border-border text-white hover:border-white'}`}
                 >
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                  <span className="w-2 h-2" style={{ backgroundColor: color }} />
                   {m.position}
                 </button>
               );
             })}
           </div>
 
-          <section className="border border-border rounded-card p-5 mt-6">
-            <h3 className="text-sm font-semibold text-ink mb-3">Measurements</h3>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-white font-light border-b border-border">
-                  <th className="py-2">Position</th>
-                  <th>Sens @ 1k</th>
-                  <th>−3 dB low</th>
-                  <th>−3 dB high</th>
-                  <th>SNR</th>
-                  <th>Mic</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {allMeasurements.map(({ color, m }) => (
-                  <tr key={m.id} className="border-b border-border/60">
-                    <td className="py-2">
-                      <span className="inline-flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-                        {m.position}
-                      </span>
-                    </td>
-                    <td className="font-mono">{m.metrics.sensitivity1k.toFixed(1)} dB</td>
-                    <td className="font-mono">{m.metrics.minus3dbLow ? `${m.metrics.minus3dbLow.toFixed(0)} Hz` : '—'}</td>
-                    <td className="font-mono">{m.metrics.minus3dbHigh ? `${(m.metrics.minus3dbHigh / 1000).toFixed(1)} kHz` : '—'}</td>
-                    <td className="font-mono">
-                      {isFinite(m.metrics.snrDb) ? (
-                        <span className={m.metrics.snrDb < 10 ? 'text-danger' : m.metrics.snrDb < 20 ? 'text-warn' : 'text-success'}>
-                          {m.metrics.snrDb.toFixed(0)} dB
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="text-xs text-white font-light">{m.micProfileId || '—'}</td>
-                    <td className="text-right">
-                      <Button size="sm" variant="ghost" onClick={() => exportFrd(session, m)}>.frd</Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => { if (confirm('Delete this measurement?')) deleteMeasurement(session.id, m.id); }}
-                      >
-                        ×
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Measurements — departure-board grid */}
+          <section>
+            <div className="spec-label mb-2">Measurements</div>
+            {/* Column headers */}
+            <div className="grid grid-cols-[1fr_6rem_6rem_6rem_5rem_6rem_4rem] items-end gap-3 pb-2">
+              <span className="spec-label">Position</span>
+              <span className="spec-label text-right">Sens @ 1k</span>
+              <span className="spec-label text-right">−3 dB Lo</span>
+              <span className="spec-label text-right">−3 dB Hi</span>
+              <span className="spec-label text-right">SNR</span>
+              <span className="spec-label">Mic</span>
+              <span />
+            </div>
+            {allMeasurements.map(({ color, m }) => (
+              <div
+                key={m.id}
+                className="data-row grid grid-cols-[1fr_6rem_6rem_6rem_5rem_6rem_4rem] items-center gap-3 py-3"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <span className="w-2 h-2 shrink-0" style={{ backgroundColor: color }} />
+                  <span className="font-mono text-xs uppercase tracking-[0.04em] text-white truncate">{m.position}</span>
+                </span>
+                <span className="font-mono text-sm tabular-nums text-white text-right">{m.metrics.sensitivity1k.toFixed(1)}</span>
+                <span className="font-mono text-sm tabular-nums text-white text-right">{m.metrics.minus3dbLow ? m.metrics.minus3dbLow.toFixed(0) : '—'}</span>
+                <span className="font-mono text-sm tabular-nums text-white text-right">{m.metrics.minus3dbHigh ? (m.metrics.minus3dbHigh / 1000).toFixed(1) + 'k' : '—'}</span>
+                <span className="font-mono text-sm tabular-nums text-right">
+                  {isFinite(m.metrics.snrDb) ? (
+                    <span className={m.metrics.snrDb < 10 ? 'text-danger' : m.metrics.snrDb < 20 ? 'text-warn' : 'text-success'}>
+                      {m.metrics.snrDb.toFixed(0)}
+                    </span>
+                  ) : '—'}
+                </span>
+                <span className="spec-label truncate">{m.micProfileId || '—'}</span>
+                <span className="flex items-center justify-end gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => exportFrd(session, m)}>.frd</Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { if (confirm('Delete this measurement?')) deleteMeasurement(session.id, m.id); }}
+                  >
+                    ×
+                  </Button>
+                </span>
+              </div>
+            ))}
+            <div className="border-t border-border" />
           </section>
         </div>
       )}
 
       {tab === 'directivity' && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="flex items-center gap-3">
-            <label className="text-sm text-white font-light">Polar frequency:</label>
+            <span className="spec-label">Polar frequency</span>
             <select
-              className="h-8 rounded-btn border border-border bg-surface px-2 text-sm font-mono"
+              className="h-8 border border-border bg-black px-2 font-mono text-xs uppercase tracking-[0.04em] text-white hover:border-white transition-colors focus:outline-none"
               value={polarFreq}
               onChange={(e) => setPolarFreq(parseInt(e.target.value))}
             >
               {[250, 500, 1000, 2000, 4000, 8000].map((f) => (
-                <option key={f} value={f}>{f >= 1000 ? `${f / 1000} kHz` : `${f} Hz`}</option>
+                <option key={f} value={f} className="bg-black">{f >= 1000 ? `${f / 1000} kHz` : `${f} Hz`}</option>
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <FrequencyChart series={directivitySeries} />
             <PolarPlot
               variants={[{ id: session.id, name: session.name, color: session.color, measurements: session.measurements }]}
@@ -192,40 +192,38 @@ export function Dashboard({ sessionId, embedded = false }: { sessionId: string; 
       )}
 
       {tab === 'waterfall' && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="flex items-center gap-3">
-            <label className="text-sm text-white font-light">Measurement:</label>
+            <span className="spec-label">Measurement</span>
             <select
-              className="h-8 rounded-btn border border-border bg-surface px-2 text-sm"
+              className="h-8 border border-border bg-black px-2 font-mono text-xs uppercase tracking-[0.04em] text-white hover:border-white transition-colors focus:outline-none"
               value={selectedMeasurement?.id || ''}
               onChange={(e) => setSelectedMeasurementId(e.target.value)}
             >
               {allMeasurements.map(({ m }) => (
-                <option key={m.id} value={m.id}>{m.position}</option>
+                <option key={m.id} value={m.id} className="bg-black">{m.position}</option>
               ))}
             </select>
           </div>
           {selectedMeasurement ? (
             <WaterfallPanel measurement={selectedMeasurement} />
           ) : (
-            <div className="text-sm text-white font-light">No measurements yet.</div>
+            <div className="spec-label">No measurements yet.</div>
           )}
         </div>
       )}
     </div>
   );
 
-  if (embedded) {
-    return (
-      <div className="max-w-6xl mx-auto px-8 py-6">
-        <div className="flex justify-end gap-2 mb-4 flex-wrap">{actions}</div>
-        {body}
-      </div>
-    );
-  }
   return (
-    <PageShell title={`${session.name} — Results`} actions={actions}>
+    <div className="w-full">
       {body}
-    </PageShell>
+      {/* Footer — back nav on the left, exports on the right, matching the
+          other wizard steps' footer placement. */}
+      <div className="flex items-center justify-between gap-2 flex-wrap pt-8">
+        <div>{footerLeft}</div>
+        <div className="flex gap-2">{exportActions}</div>
+      </div>
+    </div>
   );
 }
