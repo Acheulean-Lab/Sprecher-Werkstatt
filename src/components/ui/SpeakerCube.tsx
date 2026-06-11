@@ -24,16 +24,31 @@ const DEFAULT_PITCH = Math.PI / 9; // 20° around +x — shows top face
 
 type Vec3 = [number, number, number];
 
+/** A measurement-position diagram drawn into the 3D scene: a solid line from
+ *  the driver centre to the mic point (with a dot + distance label), and — for
+ *  off-axis positions — a dashed on-axis reference line plus a dashed
+ *  perpendicular connector, forming a right triangle whose hypotenuse is the
+ *  solid measurement line. */
+export interface MeasurementDiagram {
+  distanceM: number;      // mic distance (the solid line / hypotenuse)
+  azimuthDeg: number;     // horizontal off-axis angle
+  elevationDeg?: number;  // vertical off-axis angle
+}
+
 interface SpeakerCubeProps {
   geometry: SpeakerGeometry;
   size?: number;
   /** Multiplier applied to the drawn geometry only — the SVG element stays at
-   *  `size`, but the projected cube scales by this factor.  Equivalent to
-   *  cropping the viewBox in.  Default 1.0 = no zoom; values > 1 make the
-   *  cube appear bigger in the same container. */
+   *  `size`, but the projected cube scales by this factor. */
   zoom?: number;
   interactive?: boolean;
   micPlacement?: MicPlacement | null;
+  /** Measurement-position diagram, drawn locked to the cube. */
+  measurement?: MeasurementDiagram | null;
+  /** Projection origin as a fraction of `size` (default 0.5/0.5 = centre).
+   *  Measurement diagrams push the cube up-left so the lines have room. */
+  originX?: number;
+  originY?: number;
   strokeWidth?: number;
   strokeColor?: string;
   className?: string;
@@ -45,6 +60,9 @@ export function SpeakerCube({
   zoom = 1,
   interactive = false,
   micPlacement = null,
+  measurement = null,
+  originX = 0.5,
+  originY = 0.5,
   strokeWidth = 1.5,
   strokeColor = '#FFFFFF',
   className = '',
@@ -126,8 +144,8 @@ export function SpeakerCube({
     };
 
     const scale = size * 0.32 * zoom;
-    const ox = size / 2;
-    const oy = size / 2;
+    const ox = size * originX;
+    const oy = size * originY;
     const project = (v: Vec3): [number, number] => {
       const r = rotate(v);
       return [ox + r[0] * scale, oy - r[1] * scale];
@@ -188,6 +206,60 @@ export function SpeakerCube({
       }
     }
 
+    // ── Measurement diagram (lines locked to the cube) ──────────────────────
+    let measurementGeo: null | {
+      solid: { a: [number, number]; b: [number, number]; mid: [number, number]; label: string };
+      ref: { a: [number, number]; b: [number, number]; mid: [number, number]; label: string } | null;
+      conn: { a: [number, number]; b: [number, number]; mid: [number, number]; label: string } | null;
+    } = null;
+    if (measurement) {
+      // 1 metre ≈ this many normalised cube units (cube max dim = 1).
+      const metersToUnits = 0.95;
+      const az = (measurement.azimuthDeg * Math.PI) / 180;
+      const el = ((measurement.elevationDeg ?? 0) * Math.PI) / 180;
+
+      const topDriver = geometry.driverPosition === 'top';
+      const front: Vec3 = topDriver ? [0, 1, 0] : [0, 0, 1];
+      const dc: Vec3 = topDriver ? [0, H / 2, 0] : [0, H / 32, D / 2];
+
+      // Measurement direction = front rotated by azimuth (around vertical) and
+      // elevation (around horizontal). Front-driver case rotates +z.
+      let dir: Vec3;
+      if (topDriver) {
+        dir = [Math.sin(az), Math.cos(az), Math.sin(el)];
+      } else {
+        const x = Math.sin(az), z0 = Math.cos(az);
+        dir = [x, -z0 * Math.sin(el), z0 * Math.cos(el)];
+      }
+      const dmag = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+      dir = [dir[0] / dmag, dir[1] / dmag, dir[2] / dmag];
+
+      const L = measurement.distanceM * metersToUnits;
+      const end: Vec3 = [dc[0] + dir[0] * L, dc[1] + dir[1] * L, dc[2] + dir[2] * L];
+      const midPt: Vec3 = [dc[0] + dir[0] * L * 0.5, dc[1] + dir[1] * L * 0.5, dc[2] + dir[2] * L * 0.5];
+
+      const cosT = Math.max(-1, Math.min(1, dir[0] * front[0] + dir[1] * front[1] + dir[2] * front[2]));
+      const offAxis = measurement.azimuthDeg !== 0 || (measurement.elevationDeg ?? 0) !== 0;
+
+      let ref = null;
+      let conn = null;
+      if (offAxis) {
+        const adj = L * cosT;                       // on-axis adjacent length
+        const refEnd: Vec3 = [dc[0] + front[0] * adj, dc[1] + front[1] * adj, dc[2] + front[2] * adj];
+        const refMid: Vec3 = [dc[0] + front[0] * adj * 0.5, dc[1] + front[1] * adj * 0.5, dc[2] + front[2] * adj * 0.5];
+        const connMid: Vec3 = [(refEnd[0] + end[0]) / 2, (refEnd[1] + end[1]) / 2, (refEnd[2] + end[2]) / 2];
+        const opp = measurement.distanceM * Math.sqrt(Math.max(0, 1 - cosT * cosT));
+        ref = { a: project(dc), b: project(refEnd), mid: project(refMid), label: `${(measurement.distanceM * cosT).toFixed(2)}m` };
+        conn = { a: project(refEnd), b: project(end), mid: project(connMid), label: `${opp.toFixed(2)}m` };
+      }
+
+      measurementGeo = {
+        solid: { a: project(dc), b: project(end), mid: project(midPt), label: `${measurement.distanceM}m` },
+        ref,
+        conn,
+      };
+    }
+
     return {
       projected,
       faces,
@@ -197,9 +269,10 @@ export function SpeakerCube({
       portFace,
       portPts,
       project,
+      measurementGeo,
       W, H, D,
     };
-  }, [geometry, yaw, pitch, size, zoom]);
+  }, [geometry, yaw, pitch, size, zoom, originX, originY, measurement]);
 
   // Mic arrow.
   const micArrow = useMemo(() => {
@@ -286,6 +359,52 @@ export function SpeakerCube({
           strokeWidth={Math.max(1, strokeWidth * 0.8)}
           strokeLinejoin="round"
         />
+      )}
+
+      {/* Measurement diagram — solid line + dot + label, optional dashed
+          on-axis reference + perpendicular connector (right triangle). */}
+      {proj.measurementGeo && (
+        <g>
+          {/* Dashed on-axis reference */}
+          {proj.measurementGeo.ref && (
+            <>
+              <line
+                x1={proj.measurementGeo.ref.a[0]} y1={proj.measurementGeo.ref.a[1]}
+                x2={proj.measurementGeo.ref.b[0]} y2={proj.measurementGeo.ref.b[1]}
+                stroke="#FFFFFF" strokeWidth={1} strokeDasharray="4 4" opacity={0.6}
+              />
+              <text
+                x={proj.measurementGeo.ref.mid[0]} y={proj.measurementGeo.ref.mid[1] - 6}
+                fill="#9CA3A0" fontSize={11} fontFamily="IBM Plex Mono" textAnchor="middle"
+              >{proj.measurementGeo.ref.label}</text>
+            </>
+          )}
+          {/* Dashed perpendicular connector */}
+          {proj.measurementGeo.conn && (
+            <>
+              <line
+                x1={proj.measurementGeo.conn.a[0]} y1={proj.measurementGeo.conn.a[1]}
+                x2={proj.measurementGeo.conn.b[0]} y2={proj.measurementGeo.conn.b[1]}
+                stroke="#FFFFFF" strokeWidth={1} strokeDasharray="4 4" opacity={0.6}
+              />
+              <text
+                x={proj.measurementGeo.conn.mid[0] + 8} y={proj.measurementGeo.conn.mid[1]}
+                fill="#9CA3A0" fontSize={11} fontFamily="IBM Plex Mono" textAnchor="start"
+              >{proj.measurementGeo.conn.label}</text>
+            </>
+          )}
+          {/* Solid measurement line + end dot + distance label */}
+          <line
+            x1={proj.measurementGeo.solid.a[0]} y1={proj.measurementGeo.solid.a[1]}
+            x2={proj.measurementGeo.solid.b[0]} y2={proj.measurementGeo.solid.b[1]}
+            stroke="#FFFFFF" strokeWidth={1.5}
+          />
+          <circle cx={proj.measurementGeo.solid.b[0]} cy={proj.measurementGeo.solid.b[1]} r={3.5} fill="#FFFFFF" />
+          <text
+            x={proj.measurementGeo.solid.mid[0]} y={proj.measurementGeo.solid.mid[1] - 8}
+            fill="#FFFFFF" fontSize={12} fontFamily="IBM Plex Mono" textAnchor="middle"
+          >{proj.measurementGeo.solid.label}</text>
+        </g>
       )}
 
       {/* Mic placement arrow */}

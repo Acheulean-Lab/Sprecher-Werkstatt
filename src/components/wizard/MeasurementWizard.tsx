@@ -9,7 +9,7 @@ import { TerminalDropdown } from '../ui/TerminalDropdown';
 import { Arrow, SectionHeading, CheckMark } from '../ui/lineart';
 import { AudioLevelMeter } from '../ui/AudioLevelMeter';
 import { BUILT_IN_PROFILES, parseCalFile } from '../../data/micProfiles';
-import { POSITION_PRESETS, DEFAULT_GEOMETRY } from '../../types';
+import { DEFAULT_GEOMETRY } from '../../types';
 import type { Measurement, MicProfile, SpeakerGeometry, DriverPosition, EnclosureType } from '../../types';
 import { SpeakerCube } from '../ui/SpeakerCube';
 import { generateLogSweep } from '../../engine/sweepGenerator';
@@ -20,7 +20,26 @@ import { FrequencyChart } from '../dashboard/FrequencyChart';
 import { Dashboard } from '../dashboard/Dashboard';
 
 type Step = 'setup' | 'calibrate' | 'capture' | 'analysis';
-type CaptureSub = 'pick' | 'ready' | 'sweeping' | 'review';
+type CaptureSub = 'home' | 'ready' | 'sweeping' | 'review';
+
+/** The guided capture walkthrough — each entry is a measurement position
+ *  rendered as a diagram on the 3D speaker model. */
+interface CapturePosition {
+  id: string;
+  label: string;       // shown in UI, e.g. "On-axis · 1 m"
+  position: string;    // stored on the Measurement
+  distanceM: number;
+  azimuthDeg: number;
+  elevationDeg?: number;
+}
+const CAPTURE_POSITIONS: CapturePosition[] = [
+  { id: 'on-1', label: 'On-axis · 1 m',        position: 'On-axis · 1m',        distanceM: 1, azimuthDeg: 0 },
+  { id: 'on-2', label: 'On-axis · 2 m',        position: 'On-axis · 2m',        distanceM: 2, azimuthDeg: 0 },
+  { id: 'h15',  label: '15° horizontal · 1 m', position: '15° horizontal · 1m', distanceM: 1, azimuthDeg: 15 },
+  { id: 'h30',  label: '30° horizontal · 1 m', position: '30° horizontal · 1m', distanceM: 1, azimuthDeg: 30 },
+  { id: 'h45',  label: '45° horizontal · 1 m', position: '45° horizontal · 1m', distanceM: 1, azimuthDeg: 45 },
+  { id: 'v15',  label: '15° vertical · 1 m',   position: '15° vertical · 1m',   distanceM: 1, azimuthDeg: 0, elevationDeg: 15 },
+];
 
 const STEPS: Step[] = ['setup', 'calibrate', 'capture', 'analysis'];
 const STEP_LABELS: Record<Step, string> = {
@@ -66,9 +85,8 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
   const [calibLiveLevel, setCalibLiveLevel] = useState(-60);
 
   // ── Capture state ───────────────────────────────────────────────────────
-  const [captureSub, setCaptureSub] = useState<CaptureSub>('pick');
-  const [positionId, setPositionId] = useState<string>('on-axis');
-  const [customPositionLabel, setCustomPositionLabel] = useState<string>('');
+  const [captureSub, setCaptureSub] = useState<CaptureSub>('home');
+  const [walkIndex, setWalkIndex] = useState(0);
   const [sweeping, setSweeping] = useState(false);
   const [liveLevel, setLiveLevel] = useState(-60);
   const [processing, setProcessing] = useState(false);
@@ -235,12 +253,12 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
 
       const micProfile = getProfile(micProfileId);
       const processed = processMeasurement(recording, sweep, sampleRate, settings.gateMs, micProfile);
-      const positionLabel = positionId === 'custom' ? (customPositionLabel || 'Custom') : (POSITION_PRESETS.find((p) => p.id === positionId)?.label || positionId);
+      const posName = CAPTURE_POSITIONS[walkIndex].position;
 
       const m: Measurement = {
         id: `m-${Date.now()}`,
-        name: `${positionLabel} – ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-        position: positionLabel,
+        name: `${posName} – ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+        position: posName,
         timestamp: Date.now(),
         sweep: { f1: settings.sweepF1, f2: settings.sweepF2, duration: settings.sweepDuration, sampleRate },
         frequencyResponse: processed.raw,
@@ -284,12 +302,14 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
   const saveAndPickAnother = () => {
     if (!persistMeasurement()) return;
     setResult(null);
-    setCaptureSub('pick');
+    // Advance the walkthrough to the next position and show its diagram.
+    setWalkIndex((i) => (i + 1) % CAPTURE_POSITIONS.length);
+    setCaptureSub('ready');
   };
   const saveAndFinish = () => {
     if (!persistMeasurement()) return;
     setResult(null);
-    setCaptureSub('pick');
+    setCaptureSub('home');
     setStep('analysis');
   };
   const discardAndRetake = () => {
@@ -297,7 +317,9 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
     setCaptureSub('ready');
   };
 
-  const positionLabel = positionId === 'custom' ? customPositionLabel : POSITION_PRESETS.find((p) => p.id === positionId)?.label;
+  const currentPos = CAPTURE_POSITIONS[walkIndex];
+  const positionLabel = currentPos.label;
+  const positionCaptured = (p: CapturePosition) => measurements.some((m) => m.position === p.position);
 
   const reviewSeries = useMemo(() => {
     if (!result) return [];
@@ -338,9 +360,8 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
             />
           </label>
         ) : (
-          <div className=" flex items-center h-12">
-          {/* <div className="mb-[52px] flex items-center h-12"> */}
-            {/* <h1 className="text-page-title">{STEP_TITLES[step]}</h1> */}
+          <div className="mb-[52px] flex items-center h-12 border-b border-border">
+            <h1 className="text-page-title">{STEP_TITLES[step]}</h1>
           </div>
         )}
 
@@ -576,45 +597,31 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
               </div>
             </div>
 
-            {/* PICK position */}
-            {captureSub === 'pick' && (
+            {/* HOME — walkthrough overview: a list of positions to capture */}
+            {captureSub === 'home' && (
               <>
-                <p className="text-body">Pick the mic position for the next sweep. Each preset includes a placement guide.</p>
-                <div className="grid grid-cols-2 gap-3">
-                  {POSITION_PRESETS.map((p) => {
-                    const taken = measurements.some((m) => m.position === p.label);
+                <p className="text-body">A guided walkthrough of the standard measurement positions. Pick one to begin, or step through them in order.</p>
+                <div>
+                  {CAPTURE_POSITIONS.map((p, i) => {
+                    const taken = positionCaptured(p);
                     return (
                       <button
                         key={p.id}
-                        onClick={() => { setPositionId(p.id); setCaptureSub('ready'); }}
-                        className={`relative text-left border p-4 transition-colors ${positionId === p.id ? 'border-white' : 'border-border hover:border-white'}`}
+                        onClick={() => { setWalkIndex(i); setCaptureSub('ready'); }}
+                        className="data-row group w-full grid grid-cols-[2rem_1fr_auto] items-center gap-4 py-4 text-left"
                       >
-                        <div className="flex items-center gap-3">
-                          <SpeakerCube
-                            geometry={session.geometry}
-                            size={72}
-                            micPlacement={p.mic}
-                            strokeWidth={1}
-                            className="shrink-0"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-mono text-xs uppercase tracking-[0.04em] text-white flex items-center gap-2">
-                              <span className="truncate">{p.label}</span>
-                              {taken && <CheckMark size={12} className="text-success shrink-0" />}
-                            </div>
-                            <div className="text-body !text-xs leading-snug mt-1.5">{p.hint}</div>
-                          </div>
-                        </div>
+                        <span className="spec-label">{String(i + 1).padStart(2, '0')}</span>
+                        <span className="font-mono text-sm uppercase tracking-[0.04em] text-[#9CA3A0] group-hover:text-white transition-colors">{p.label}</span>
+                        <span className="flex items-center gap-3">
+                          {taken
+                            ? <span className="flex items-center gap-2"><CheckMark size={14} className="text-success" /><span className="spec-label">captured</span></span>
+                            : <span className="spec-label">—</span>}
+                          <Arrow dir="right" size={14} className="text-[#6B6B70] group-hover:text-white transition-colors" />
+                        </span>
                       </button>
                     );
                   })}
-                </div>
-                <div className="border-t border-border pt-4">
-                  <div className="spec-label mb-2">Or enter a custom position label</div>
-                  <div className="flex gap-2">
-                    <Input placeholder="e.g. 22° listening axis" value={customPositionLabel} onChange={(e) => setCustomPositionLabel(e.target.value)} />
-                    <Button variant="secondary" disabled={!customPositionLabel.trim()} onClick={() => { setPositionId('custom'); setCaptureSub('ready'); }}>Use label</Button>
-                  </div>
+                  <div className="border-b border-border" />
                 </div>
                 <div className="flex justify-between pt-2">
                   <Button size="sm" variant="secondary" onClick={goPrev}><Arrow dir="left" /> Calibrate</Button>
@@ -625,23 +632,40 @@ export function MeasurementWizard({ sessionId }: { sessionId: string }) {
               </>
             )}
 
-            {/* READY to sweep */}
+            {/* READY — guided walkthrough: the speaker model is the focus, with
+                the measurement position drawn into the 3D scene. */}
             {captureSub === 'ready' && (
-              <div className="panel">
-                <div className="panel-head">
-                  <span className="spec-label">Ready to sweep</span>
-                  <span className="spec-label">{positionLabel}</span>
+              <div className="space-y-6">
+                {/* Sub-step label */}
+                <div className="flex items-baseline justify-between">
+                  <h2 className="text-section-heading">{currentPos.label}</h2>
+                  <span className="spec-label">Position {walkIndex + 1} / {CAPTURE_POSITIONS.length}{positionCaptured(currentPos) ? ' · captured' : ''}</span>
                 </div>
-                <div className="p-5">
-                  <div className="grid grid-cols-3 gap-4 mb-5">
-                    <Metric label="Sweep range" value={`${settings.sweepF1}–${settings.sweepF2} Hz`} />
-                    <Metric label="Duration" value={`${settings.sweepDuration} s`} />
-                    <Metric label="Gate" value={`${settings.gateMs} ms`} />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button onClick={startSweep}>Start sweep</Button>
-                    <Button variant="secondary" onClick={() => setCaptureSub('pick')}><Arrow dir="left" /> Position</Button>
-                  </div>
+
+                {/* Big interactive 3D scene with the measurement diagram */}
+                <div className="flex justify-center">
+                  <SpeakerCube
+                    geometry={session.geometry}
+                    size={520}
+                    zoom={0.85}
+                    interactive
+                    originX={0.34}
+                    originY={0.30}
+                    measurement={{ distanceM: currentPos.distanceM, azimuthDeg: currentPos.azimuthDeg, elevationDeg: currentPos.elevationDeg }}
+                  />
+                </div>
+
+                {/* Start sweep sits below the speaker */}
+                <div className="flex justify-center">
+                  <Button onClick={startSweep}>Start sweep</Button>
+                </div>
+
+                {/* Walkthrough navigation */}
+                <div className="flex items-center justify-between pt-2">
+                  <Button size="sm" variant="secondary" onClick={() => setCaptureSub('home')}><Arrow dir="left" /> Back</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setWalkIndex((i) => (i + 1) % CAPTURE_POSITIONS.length)}>
+                    Next position <Arrow dir="right" />
+                  </Button>
                 </div>
               </div>
             )}
